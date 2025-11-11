@@ -33,6 +33,26 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
     }
   }, [gameState?.game.status, gameState?.players, gameState?.game.winnerId]);
 
+  // Scroll to the bottom of the guesses list when the guesses change
+  useEffect(() => {
+    if (gameState?.game.status === "active") {
+      const myGuessesElement = document.getElementById("my-guesses");
+      
+      if (myGuessesElement) {
+        myGuessesElement.scrollTop = myGuessesElement.scrollHeight;
+      }
+    }
+  }, [myGuesses]);
+
+  useEffect(() => {
+    if (gameState?.game.status === "active") {
+      const opponentGuessesElement = document.getElementById("opponent-guesses");
+      if (opponentGuessesElement) {
+        opponentGuessesElement.scrollTop = opponentGuessesElement.scrollHeight;
+      }
+    }
+  }, [opponentGuesses]);
+
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPlayer || !guessText.trim() || isSubmitting) return;
@@ -136,7 +156,7 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
           <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="bg-blue-50 rounded-lg p-4">
               <h3 className="font-semibold text-blue-900 mb-2">Your Guesses ({myGuesses.length})</h3>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div id="my-guesses" className="space-y-2 max-h-40 overflow-y-auto">
                 {myGuesses.length === 0 ? (
                   <p className="text-blue-600 text-sm">No guesses yet</p>
                 ) : (
@@ -156,7 +176,7 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
               <h3 className="font-semibold text-orange-900 mb-2">
                 {opponent.username}'s Guesses ({opponentGuesses.length})
               </h3>
-              <div className="space-y-2 max-h-40 overflow-y-auto">
+              <div id="opponent-guesses" className="space-y-2 max-h-40 overflow-y-auto">
                 {opponentGuesses.length === 0 ? (
                   <p className="text-orange-600 text-sm">No guesses yet</p>
                 ) : (
