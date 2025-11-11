@@ -314,13 +314,14 @@ export const updateUserStats = internalMutation({
       .first();
     
     if (existingStats) {
+      const currentStreak = existingStats.currentWinStreak ?? 0;
       await ctx.db.patch(existingStats._id, {
         wins: existingStats.wins + (args.won ? 1 : 0),
         losses: existingStats.losses + (args.won ? 0 : 1),
         totalGuesses: existingStats.totalGuesses + args.guesses,
         gamesPlayed: existingStats.gamesPlayed + 1,
         mostRecentUsername: args.username,
-        currentWinStreak: args.won ? existingStats.currentWinStreak + 1 : 0,
+        currentWinStreak: args.won ? currentStreak + 1 : 0,
       });
     } else {
       await ctx.db.insert("userStats", {
@@ -641,7 +642,7 @@ export const getLeaderboard = query({
       wins: stat.wins,
       averageGuessesPerWin: stat.wins > 0 ? Math.round((stat.totalGuesses / stat.wins) * 10) / 10 : 0,
       gamesPlayed: stat.gamesPlayed,
-      currentWinStreak: stat.currentWinStreak,
+      currentWinStreak: stat.currentWinStreak ?? 0,
     }));
   },
 });
