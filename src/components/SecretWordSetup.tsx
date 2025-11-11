@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useAction, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 
@@ -10,6 +10,10 @@ interface SecretWordSetupProps {
 export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
   const [secretWord, setSecretWord] = useState("");
   const [isValidating, setIsValidating] = useState(false);
+  
+  const validateWord = useAction(api.dictionary.validateWordPublic);
+  const loggedInUser = useQuery(api.auth.loggedInUser);
+  const checkIfUsed = useAction(api.games.checkIfWordUsed);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,19 +27,36 @@ export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
 
     if (new Set(word).size !== word.length) {
       const duplicates = word.split('').filter((char, index) => word.indexOf(char) !== index);
-      toast.error(`Secret word cannot have duplicate letters. Found duplicates: ${[...new Set(duplicates)].join(', ')}`);
+      toast.error(`Duplicate letters not allowed. Found duplicates: ${[...new Set(duplicates)].join(', ')}`);
       return;
     }
 
     setIsValidating(true);
     
     try {
-      // We'll validate the word when creating/joining the game
-      // For now, just do basic validation
+      // Check if word is valid in dictionary
+      const isValid = await validateWord({ word });
+      if (!isValid) {
+        toast.error("Not a real dictionary word. Please choose a valid English word.");
+        setIsValidating(false);
+        return;
+      }
+
+      // Check if user has used this word before
+      if (loggedInUser?._id) {
+        const hasUsed = await checkIfUsed({ word });
+        if (hasUsed) {
+          toast.error("You've already used this word before. Please pick a different secret word to stay creative!");
+          setIsValidating(false);
+          return;
+        }
+      }
+
+      // All validations passed
       onSecretWordSet(word);
       toast.success("Secret word set! Choose how to play.");
     } catch (error) {
-      toast.error("Please enter a valid English word");
+      toast.error(error instanceof Error ? error.message : "Failed to validate word");
     } finally {
       setIsValidating(false);
     }

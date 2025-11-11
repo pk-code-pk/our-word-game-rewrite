@@ -279,6 +279,26 @@ export const checkWordUsed = internalQuery({
   },
 });
 
+export const checkIfWordUsed = action({
+  args: {
+    word: v.string(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return false; // If not logged in, can't check used words
+    }
+    
+    const hasUsed: boolean = await ctx.runQuery(internal.games.checkWordUsed, {
+      userId,
+      word: args.word,
+    });
+    
+    return hasUsed;
+  },
+});
+
 export const updateUserStats = internalMutation({
   args: {
     userId: v.id("users"),

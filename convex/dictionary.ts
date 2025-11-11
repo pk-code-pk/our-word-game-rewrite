@@ -1,9 +1,10 @@
 import { v } from "convex/values";
-import { internalAction, query, mutation, internalQuery, internalMutation } from "./_generated/server";
+import { internalAction, query, mutation, internalQuery, internalMutation, action } from "./_generated/server";
 import { internal } from "./_generated/api";
 
 export const validateWord = internalAction({
   args: { word: v.string() },
+  returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
     const word = args.word.toLowerCase().trim();
     
@@ -97,5 +98,17 @@ export const cacheWordResult = internalMutation({
       source: args.source,
       checkedAt: args.checkedAt,
     });
+  },
+});
+
+// Public action wrapper for validateWord
+export const validateWordPublic = action({
+  args: { word: v.string() },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const isValid: boolean = await ctx.runAction(internal.dictionary.validateWord, {
+      word: args.word,
+    });
+    return isValid;
   },
 });
