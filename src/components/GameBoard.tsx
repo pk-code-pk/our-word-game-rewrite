@@ -4,6 +4,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
+import confetti from "canvas-confetti";
 
 interface GameBoardProps {
   gameId: string;
@@ -29,9 +30,18 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
       const winner = gameState.players.find(p => p._id === gameState.game.winnerId);
       if (winner) {
         toast.success(`Game Over! ${winner.username} wins!`);
+        
+        // Trigger confetti if current player is the winner
+        if (winner._id === currentPlayer?._id) {
+          confetti({
+            particleCount: 100,
+            spread: 70,
+            origin: { y: 0.6 }
+          });
+        }
       }
     }
-  }, [gameState?.game.status, gameState?.players, gameState?.game.winnerId]);
+  }, [gameState?.game.status, gameState?.players, gameState?.game.winnerId, currentPlayer?._id]);
 
   // Scroll to the bottom of the guesses list when the guesses change
   useEffect(() => {
@@ -153,45 +163,74 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
         )}
 
         {opponent && (
-          <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-blue-50 rounded-lg p-4">
-              <h3 className="font-semibold text-blue-900 mb-2">Your Guesses ({myGuesses.length})</h3>
-              <div id="my-guesses" className="space-y-2 max-h-40 overflow-y-auto">
-                {myGuesses.length === 0 ? (
-                  <p className="text-blue-600 text-sm">No guesses yet</p>
-                ) : (
-                  myGuesses.map((guess) => (
-                    <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
-                      <span className="font-mono font-bold">
-                        {guess.text} {guess.type === "fullWord" && "🎯"}
-                      </span>
-                      {renderGuessResult(guess)}
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
+          <>
+            {/* Show secret words when game is completed */}
+            {gameState.game.status === "completed" && (
+              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-gradient-to-r from-blue-100 to-blue-50 rounded-lg p-4 border-2 border-blue-300">
+                  <h3 className="font-semibold text-blue-900 mb-2 text-center">
+                    Your Secret Word {currentPlayer?._id === gameState.game.winnerId && "🎉"}
+                  </h3>
+                  <div className="text-center">
+                    <span className="text-3xl font-bold font-mono text-blue-800">
+                      {currentPlayer?.secretWord}
+                    </span>
+                  </div>
+                </div>
 
-            <div className="bg-orange-50 rounded-lg p-4">
-              <h3 className="font-semibold text-orange-900 mb-2">
-                {opponent.username}'s Guesses ({opponentGuesses.length})
-              </h3>
-              <div id="opponent-guesses" className="space-y-2 max-h-40 overflow-y-auto">
-                {opponentGuesses.length === 0 ? (
-                  <p className="text-orange-600 text-sm">No guesses yet</p>
-                ) : (
-                  opponentGuesses.map((guess) => (
-                    <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
-                      <span className="font-mono font-bold">
-                        {guess.text} {guess.type === "fullWord" && "🎯"}
-                      </span>
-                      {renderGuessResult(guess)}
-                    </div>
-                  ))
-                )}
+                <div className="bg-gradient-to-r from-orange-100 to-orange-50 rounded-lg p-4 border-2 border-orange-300">
+                  <h3 className="font-semibold text-orange-900 mb-2 text-center">
+                    {opponent.username}'s Secret Word {opponent._id === gameState.game.winnerId && "🎉"}
+                  </h3>
+                  <div className="text-center">
+                    <span className="text-3xl font-bold font-mono text-orange-800">
+                      {opponent.secretWord}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-blue-50 rounded-lg p-4">
+                <h3 className="font-semibold text-blue-900 mb-2">Your Guesses ({myGuesses.length})</h3>
+                <div id="my-guesses" className="space-y-2 max-h-40 overflow-y-auto">
+                  {myGuesses.length === 0 ? (
+                    <p className="text-blue-600 text-sm">No guesses yet</p>
+                  ) : (
+                    myGuesses.map((guess) => (
+                      <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
+                        <span className="font-mono font-bold">
+                          {guess.text} {guess.type === "fullWord" && "🎯"}
+                        </span>
+                        {renderGuessResult(guess)}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="bg-orange-50 rounded-lg p-4">
+                <h3 className="font-semibold text-orange-900 mb-2">
+                  {opponent.username}'s Guesses ({opponentGuesses.length})
+                </h3>
+                <div id="opponent-guesses" className="space-y-2 max-h-40 overflow-y-auto">
+                  {opponentGuesses.length === 0 ? (
+                    <p className="text-orange-600 text-sm">No guesses yet</p>
+                  ) : (
+                    opponentGuesses.map((guess) => (
+                      <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
+                        <span className="font-mono font-bold">
+                          {guess.text} {guess.type === "fullWord" && "🎯"}
+                        </span>
+                        {renderGuessResult(guess)}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          </>
         )}
 
         {/* Guess Input */}

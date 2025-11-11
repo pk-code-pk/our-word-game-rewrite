@@ -42,6 +42,23 @@ const applicationTables = {
     source: v.string(),
     checkedAt: v.number(),
   }).index("by_word", ["word"]),
+
+  usedWords: defineTable({
+    userId: v.id("users"),
+    word: v.string(),
+    usedAt: v.number(),
+  }).index("by_user", ["userId"])
+    .index("by_user_and_word", ["userId", "word"]),
+
+  userStats: defineTable({
+    userId: v.id("users"),
+    wins: v.number(),
+    losses: v.number(),
+    totalGuesses: v.number(),
+    gamesPlayed: v.number(),
+    mostRecentUsername: v.string(),
+  }).index("by_user", ["userId"])
+    .index("by_wins", ["wins"]),
 };
 
 export default defineSchema({

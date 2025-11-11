@@ -7,19 +7,46 @@ import { useState } from "react";
 import { SecretWordSetup } from "./components/SecretWordSetup";
 import { GameLobby } from "./components/GameLobby";
 import { GameBoard } from "./components/GameBoard";
+import { Leaderboard } from "./components/Leaderboard";
 
 export default function App() {
+  const [currentView, setCurrentView] = useState<"game" | "leaderboard">("game");
+
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10 bg-indigo-700 text-white h-16 flex justify-between items-center shadow-md px-4">
         <h1 className="text-3xl font-bold tracking-wide">OurWordGame</h1>
-        <Authenticated>
-          <SignOutButton />
-        </Authenticated>
+        <div className="flex items-center gap-4">
+          <Authenticated>
+            <nav className="flex gap-2">
+              <button
+                onClick={() => setCurrentView("game")}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                  currentView === "game"
+                    ? "bg-white text-indigo-700"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                }`}
+              >
+                Play Game
+              </button>
+              <button
+                onClick={() => setCurrentView("leaderboard")}
+                className={`px-4 py-2 rounded-lg font-semibold transition-colors ${
+                  currentView === "leaderboard"
+                    ? "bg-white text-indigo-700"
+                    : "bg-indigo-600 text-white hover:bg-indigo-500"
+                }`}
+              >
+                🏆 Leaderboard
+              </button>
+            </nav>
+            <SignOutButton />
+          </Authenticated>
+        </div>
       </header>
       <main className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-6xl mx-auto">
-          <Content />
+          {currentView === "game" ? <Content /> : <Leaderboard />}
         </div>
       </main>
       <Toaster />
