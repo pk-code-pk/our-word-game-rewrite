@@ -43,30 +43,32 @@ function Content() {
 
   return (
     <div className="flex flex-col gap-8">
-      <div className="text-center mb-8">
-        <h2 className="text-4xl font-bold text-gray-900 mb-4">
-          Word Deduction Challenge
-        </h2>
-        <Authenticated>
-          <p className="text-xl text-gray-600 mb-2">
-            Welcome back, {loggedInUser?.email ?? "friend"}!
-          </p>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl mx-auto">
-            <h3 className="font-semibold text-blue-900 mb-2">How to Play:</h3>
-            <ul className="text-blue-800 text-left space-y-1">
-              <li>• Each player chooses a secret 5-letter word (no duplicate letters)</li>
-              <li>• Submit 4-letter guesses to deduce your opponent's secret word</li>
-              <li>• Get feedback on how many letters overlap between your guess and their secret</li>
-              <li>• Make as many guesses as you need - there's no limit!</li>
-              <li>• You can also guess the full 5-letter word at any time</li>
-              <li>• Winner: whoever guesses the opponent's word first</li>
-            </ul>
-          </div>
-        </Authenticated>
-        <Unauthenticated>
-          <p className="text-xl text-gray-600">Sign in to start playing</p>
-        </Unauthenticated>
-      </div>
+      {gamePhase !== "playing" && (
+        <div className="text-center mb-8">
+          <h2 className="text-4xl font-bold text-gray-900 mb-4">
+            Word Deduction Challenge
+          </h2>
+          <Authenticated>
+            <p className="text-xl text-gray-600 mb-2">
+              Welcome back, {loggedInUser?.email ?? "friend"}!
+            </p>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl mx-auto">
+              <h3 className="font-semibold text-blue-900 mb-2">How to Play:</h3>
+              <ul className="text-blue-800 text-left space-y-1">
+                <li>• Each player chooses a secret 5-letter word (no duplicate letters)</li>
+                <li>• Submit 4-letter guesses to deduce your opponent's secret word</li>
+                <li>• Get feedback on how many letters overlap between your guess and their secret word</li>
+                <li>• Make as many guesses as you need - there's no limit!</li>
+                <li>• You can also guess the full 5-letter word at any time</li>
+                <li>• Winner: whoever guesses the opponent's word first</li>
+              </ul>
+            </div>
+          </Authenticated>
+          <Unauthenticated>
+            <p className="text-xl text-gray-600">Sign in to start playing</p>
+          </Unauthenticated>
+        </div>
+      )}
 
       <Unauthenticated>
         <SignInForm />
@@ -97,14 +99,27 @@ function Content() {
         )}
 
         {gamePhase === "playing" && currentGameId && (
-          <GameBoard
-            gameId={currentGameId}
-            onGameEnd={() => {
-              setCurrentGameId("");
-              setSecretWord("");
-              setGamePhase("setup");
-            }}
-          />
+          <>
+            <GameBoard
+              gameId={currentGameId}
+              onGameEnd={() => {
+                setCurrentGameId("");
+                setSecretWord("");
+                setGamePhase("setup");
+              }}
+            />
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-2xl mx-auto">
+              <h3 className="font-semibold text-blue-900 mb-2">How to Play:</h3>
+              <ul className="text-blue-800 text-left space-y-1">
+                <li>• Each player chooses a secret 5-letter word (no duplicate letters)</li>
+                <li>• Submit 4-letter guesses to deduce your opponent's secret word</li>
+                <li>• Get feedback on how many letters overlap between your guess and their secret word</li>
+                <li>• Make as many guesses as you need - there's no limit!</li>
+                <li>• You can also guess the full 5-letter word at any time</li>
+                <li>• Winner: whoever guesses the opponent's word first</li>
+              </ul>
+            </div>
+          </>
         )}
       </Authenticated>
     </div>
