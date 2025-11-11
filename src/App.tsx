@@ -59,7 +59,7 @@ function Content() {
               <li>• Get feedback on how many letters overlap between your guess and their secret</li>
               <li>• Make as many guesses as you need - there's no limit!</li>
               <li>• You can also guess the full 5-letter word at any time</li>
-              <li>• Winner: whoever guesses the opponent's word with fewer total guesses</li>
+              <li>• Winner: whoever guesses the opponent's word first</li>
             </ul>
           </div>
         </Authenticated>
