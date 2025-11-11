@@ -12,7 +12,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10 bg-indigo-700 text-white h-16 flex justify-between items-center shadow-md px-4">
-        <h1 className="text-3xl font-bold tracking-wide">DualWord</h1>
+        <h1 className="text-3xl font-bold tracking-wide">OurWordGame</h1>
         <Authenticated>
           <SignOutButton />
         </Authenticated>
