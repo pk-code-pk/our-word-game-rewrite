@@ -35,6 +35,7 @@ export function Leaderboard() {
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Rank</th>
                 <th className="text-left py-3 px-4 font-semibold text-gray-700">Player</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Wins</th>
+                <th className="text-center py-3 px-4 font-semibold text-gray-700">Win Streak</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Games Played</th>
                 <th className="text-center py-3 px-4 font-semibold text-gray-700">Avg. Guesses/Win</th>
               </tr>
@@ -61,6 +62,15 @@ export function Leaderboard() {
                   <td className="py-4 px-4 text-center">
                     <span className="inline-flex items-center px-3 py-1 rounded-full text-sm font-semibold bg-green-100 text-green-800">
                       {entry.wins}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4 text-center">
+                    <span className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-bold ${
+                      entry.currentWinStreak > 0 
+                        ? 'bg-orange-100 text-orange-800' 
+                        : 'bg-gray-100 text-gray-500'
+                    }`}>
+                      {entry.currentWinStreak > 0 ? `🔥 ${entry.currentWinStreak}` : '0'}
                     </span>
                   </td>
                   <td className="py-4 px-4 text-center">

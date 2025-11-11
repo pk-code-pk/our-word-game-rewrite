@@ -57,6 +57,7 @@ const applicationTables = {
     totalGuesses: v.number(),
     gamesPlayed: v.number(),
     mostRecentUsername: v.string(),
+    currentWinStreak: v.number(),
   }).index("by_user", ["userId"])
     .index("by_wins", ["wins"]),
 };

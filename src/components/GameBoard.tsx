@@ -38,6 +38,14 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
             spread: 70,
             origin: { y: 0.6 }
           });
+        } else if (currentPlayer?._id) {
+          // Show "So close!" message for the loser after a short delay
+          setTimeout(() => {
+            toast("So close!", {
+              description: "Better luck next time!",
+              duration: 4000,
+            });
+          }, 1000);
         }
       }
     }

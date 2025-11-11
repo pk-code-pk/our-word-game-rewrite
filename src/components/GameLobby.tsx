@@ -162,7 +162,7 @@ export function GameLobby({ secretWord, onGameStart, onBackToSetup }: GameLobbyP
                 value={gameCode}
                 onChange={(e) => setGameCode(e.target.value.toUpperCase())}
                 placeholder="Enter game code"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-2xl text-center tracking-wider"
               />
             </div>
             

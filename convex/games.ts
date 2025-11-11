@@ -300,6 +300,7 @@ export const updateUserStats = internalMutation({
         totalGuesses: existingStats.totalGuesses + args.guesses,
         gamesPlayed: existingStats.gamesPlayed + 1,
         mostRecentUsername: args.username,
+        currentWinStreak: args.won ? existingStats.currentWinStreak + 1 : 0,
       });
     } else {
       await ctx.db.insert("userStats", {
@@ -309,6 +310,7 @@ export const updateUserStats = internalMutation({
         totalGuesses: args.guesses,
         gamesPlayed: 1,
         mostRecentUsername: args.username,
+        currentWinStreak: args.won ? 1 : 0,
       });
     }
     
@@ -604,6 +606,7 @@ export const getLeaderboard = query({
     wins: v.number(),
     averageGuessesPerWin: v.number(),
     gamesPlayed: v.number(),
+    currentWinStreak: v.number(),
   })),
   handler: async (ctx) => {
     // Get all user stats sorted by wins in descending order
@@ -618,6 +621,7 @@ export const getLeaderboard = query({
       wins: stat.wins,
       averageGuessesPerWin: stat.wins > 0 ? Math.round((stat.totalGuesses / stat.wins) * 10) / 10 : 0,
       gamesPlayed: stat.gamesPlayed,
+      currentWinStreak: stat.currentWinStreak,
     }));
   },
 });
