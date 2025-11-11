@@ -107,7 +107,7 @@ export const validateWordPublic = action({
   returns: v.boolean(),
   handler: async (ctx, args): Promise<boolean> => {
     const isValid: boolean = await ctx.runAction(
-      internal.dictionary.validateWord as any,
+      (internal as any).dictionary.validateWord,
       { word: args.word }
     );
     return isValid;

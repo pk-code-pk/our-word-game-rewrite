@@ -291,7 +291,7 @@ export const checkIfWordUsed = action({
     }
     
     const hasUsed: boolean = await ctx.runQuery(
-      internal.games.checkWordUsed as any,
+      (internal as any).games.checkWordUsed,
       { userId, word: args.word }
     );
     
