@@ -290,10 +290,10 @@ export const checkIfWordUsed = action({
       return false; // If not logged in, can't check used words
     }
     
-    const hasUsed: boolean = await ctx.runQuery(internal.games.checkWordUsed, {
-      userId,
-      word: args.word,
-    });
+    const hasUsed: boolean = await ctx.runQuery(
+      internal.games.checkWordUsed as any,
+      { userId, word: args.word }
+    );
     
     return hasUsed;
   },

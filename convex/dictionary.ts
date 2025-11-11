@@ -105,10 +105,11 @@ export const cacheWordResult = internalMutation({
 export const validateWordPublic = action({
   args: { word: v.string() },
   returns: v.boolean(),
-  handler: async (ctx, args) => {
-    const isValid: boolean = await ctx.runAction(internal.dictionary.validateWord, {
-      word: args.word,
-    });
+  handler: async (ctx, args): Promise<boolean> => {
+    const isValid: boolean = await ctx.runAction(
+      internal.dictionary.validateWord as any,
+      { word: args.word }
+    );
     return isValid;
   },
 });
