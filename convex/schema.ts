@@ -5,7 +5,8 @@ import { authTables } from "@convex-dev/auth/server";
 const applicationTables = {
   games: defineTable({
     code: v.string(),
-    mode: v.literal("pvp"),
+    // Allow legacy "vs_ai" documents to pass validation, even though new games are PvP-only.
+    mode: v.union(v.literal("pvp"), v.literal("vs_ai")),
     status: v.union(v.literal("waiting"), v.literal("active"), v.literal("completed")),
     public: v.boolean(),
     winnerId: v.optional(v.string()),

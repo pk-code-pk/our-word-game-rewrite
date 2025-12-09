@@ -563,7 +563,8 @@ export const getGameState = query({
         _id: v.id("games"),
         _creationTime: v.number(),
         code: v.string(),
-        mode: v.literal("pvp"),
+        // Accept legacy "vs_ai" values so validation doesn't fail on old documents.
+        mode: v.union(v.literal("pvp"), v.literal("vs_ai")),
         status: v.union(v.literal("waiting"), v.literal("active"), v.literal("completed")),
         public: v.boolean(),
         winnerId: v.optional(v.string()),
