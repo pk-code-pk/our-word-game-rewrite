@@ -20,6 +20,9 @@ const applicationTables = {
     gameId: v.id("games"),
     userId: v.optional(v.id("users")),
     username: v.string(),
+    // Allow legacy AI fields so old documents still validate
+    isAI: v.optional(v.boolean()),
+    difficulty: v.optional(v.union(v.literal("easy"), v.literal("standard"), v.literal("hard"))),
     secretWordHash: v.string(),
     secretWord: v.optional(v.string()), // Temporary storage for demo - not secure for production
     alphabet: v.record(v.string(), v.union(v.literal("present"), v.literal("absent"), v.literal("unknown"))),
