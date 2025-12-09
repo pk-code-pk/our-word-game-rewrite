@@ -4,6 +4,7 @@ import { Id } from "../../convex/_generated/dataModel";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
+import { ChatPanel } from "./ChatPanel";
 import confetti from "canvas-confetti";
 
 interface GameBoardProps {
@@ -301,13 +302,21 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
       </div>
 
       {/* Right Panel - Alphabet Board */}
-      <div className="lg:col-span-1">
+      <div className="lg:col-span-1 space-y-6">
         {currentPlayer && (
-          <AlphabetBoard
-            playerId={currentPlayer._id}
-            alphabet={currentPlayer.alphabet}
-            disabled={!isGameActive}
-          />
+          <>
+            <AlphabetBoard
+              playerId={currentPlayer._id}
+              alphabet={currentPlayer.alphabet}
+              disabled={!isGameActive}
+            />
+            <ChatPanel
+              gameId={gameId as Id<"games">}
+              playerId={currentPlayer._id}
+              username={currentPlayer.username}
+              disabled={!opponent || opponent.isAI || gameState.game.status !== "active"}
+            />
+          </>
         )}
       </div>
     </div>

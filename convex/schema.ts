@@ -53,6 +53,14 @@ const applicationTables = {
   }).index("by_user", ["userId"])
     .index("by_user_and_word", ["userId", "word"]),
 
+  chatMessages: defineTable({
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+    username: v.string(),
+    text: v.string(),
+    createdAt: v.number(),
+  }).index("by_game_and_createdAt", ["gameId", "createdAt"]),
+
   userStats: defineTable({
     userId: v.id("users"),
     wins: v.number(),

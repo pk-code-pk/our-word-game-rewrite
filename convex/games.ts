@@ -650,6 +650,98 @@ export const getPlayer = query({
   },
 });
 
+export const listChatMessages = query({
+  args: { gameId: v.id("games") },
+  returns: v.array(
+    v.object({
+      _id: v.id("chatMessages"),
+      _creationTime: v.number(),
+      gameId: v.id("games"),
+      playerId: v.id("players"),
+      username: v.string(),
+      text: v.string(),
+      createdAt: v.number(),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
+    }
+
+    let isParticipant = false;
+    for await (const player of ctx.db
+      .query("players")
+      .withIndex("by_game", (q) => q.eq("gameId", args.gameId))) {
+      if (player.userId === userId) {
+        isParticipant = true;
+        break;
+      }
+    }
+
+    if (!isParticipant) {
+      return [];
+    }
+
+    const messages = await ctx.db
+      .query("chatMessages")
+      .withIndex("by_game_and_createdAt", (q) => q.eq("gameId", args.gameId))
+      .order("asc")
+      .take(100);
+
+    return messages;
+  },
+});
+
+export const sendChatMessage = mutation({
+  args: {
+    gameId: v.id("games"),
+    playerId: v.id("players"),
+    text: v.string(),
+  },
+  returns: v.object({
+    messageId: v.id("chatMessages"),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("You must be signed in to chat.");
+    }
+
+    const player = await ctx.db.get(args.playerId);
+    if (!player || player.gameId !== args.gameId) {
+      throw new Error("Player not found in this game.");
+    }
+
+    if (player.userId && player.userId !== userId) {
+      throw new Error("You can only chat as your own player.");
+    }
+
+    const game = await ctx.db.get(args.gameId);
+    if (!game) {
+      throw new Error("Game not found.");
+    }
+
+    const text = args.text.trim();
+    if (text.length === 0) {
+      throw new Error("Message cannot be empty.");
+    }
+    if (text.length > 300) {
+      throw new Error("Message is too long (max 300 characters).");
+    }
+
+    const messageId = await ctx.db.insert("chatMessages", {
+      gameId: args.gameId,
+      playerId: args.playerId,
+      username: player.username,
+      text,
+      createdAt: Date.now(),
+    });
+
+    return { messageId };
+  },
+});
+
 export const getSecretWordForPlayer = internalQuery({
   args: { playerId: v.id("players") },
   returns: v.string(),
