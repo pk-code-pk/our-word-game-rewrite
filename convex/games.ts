@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, action, internalMutation, internalQuery } from "./_generated/server";
-import { api, internal } from "./_generated/api";
+import { internal } from "./_generated/api";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { Id } from "./_generated/dataModel";
 
@@ -28,8 +28,6 @@ export const createGame = action({
     username: v.string(),
     secretWord: v.string(),
     public: v.optional(v.boolean()),
-    mode: v.optional(v.union(v.literal("pvp"), v.literal("vs_ai"))),
-    difficulty: v.optional(v.union(v.literal("easy"), v.literal("standard"), v.literal("hard"))),
   },
   returns: v.object({
     gameId: v.string(),
@@ -64,13 +62,11 @@ export const createGame = action({
     
     const result: { gameId: string; playerId: string; code: string } = await ctx.runMutation(internal.games.createGameMutation, {
       code,
-      mode: args.mode || "pvp",
       secretHash,
       secretWord: args.secretWord,
       username: args.username,
       userId: userId || undefined,
       public: args.public || false,
-      difficulty: args.difficulty,
     });
 
     return result;
@@ -80,13 +76,11 @@ export const createGame = action({
 export const createGameMutation = internalMutation({
   args: {
     code: v.string(),
-    mode: v.union(v.literal("pvp"), v.literal("vs_ai")),
     secretHash: v.string(),
     secretWord: v.string(),
     username: v.string(),
     userId: v.optional(v.id("users")),
     public: v.boolean(),
-    difficulty: v.optional(v.union(v.literal("easy"), v.literal("standard"), v.literal("hard"))),
   },
   returns: v.object({
     gameId: v.string(),
@@ -96,7 +90,7 @@ export const createGameMutation = internalMutation({
   handler: async (ctx, args) => {
     const gameId = await ctx.db.insert("games", {
       code: args.code,
-      mode: args.mode,
+      mode: "pvp",
       status: "waiting",
       public: args.public,
       createdAt: Date.now(),
@@ -112,7 +106,6 @@ export const createGameMutation = internalMutation({
       gameId,
       userId: args.userId,
       username: args.username,
-      isAI: false,
       secretWordHash: args.secretHash,
       secretWord: args.secretWord, // Store actual word for demo
       alphabet,
@@ -125,14 +118,6 @@ export const createGameMutation = internalMutation({
         userId: args.userId,
         word: args.secretWord.toUpperCase(),
         usedAt: Date.now(),
-      });
-    }
-
-    // If vs AI mode, create AI player
-    if (args.mode === "vs_ai") {
-      await ctx.scheduler.runAfter(0, internal.ai.createAIPlayer, {
-        gameId,
-        difficulty: args.difficulty || "standard",
       });
     }
 
@@ -231,7 +216,6 @@ export const joinGameMutation = internalMutation({
       gameId: game._id,
       userId: args.userId,
       username: args.username,
-      isAI: false,
       secretWordHash: secretHash,
       secretWord: args.secretWord, // Store actual word for demo
       alphabet,
@@ -476,14 +460,6 @@ export const submitGuessMutation = internalMutation({
       }
     }
 
-    // If vs AI, trigger AI response
-    if (game.mode === "vs_ai" && opponent.isAI && !isCorrect) {
-      await ctx.scheduler.runAfter(1000, internal.ai.makeAIGuess, {
-        gameId: args.gameId,
-        aiPlayerId: opponent._id,
-      });
-    }
-
     return {
       matchCount,
       isCorrect,
@@ -587,7 +563,7 @@ export const getGameState = query({
         _id: v.id("games"),
         _creationTime: v.number(),
         code: v.string(),
-        mode: v.union(v.literal("pvp"), v.literal("vs_ai")),
+        mode: v.literal("pvp"),
         status: v.union(v.literal("waiting"), v.literal("active"), v.literal("completed")),
         public: v.boolean(),
         winnerId: v.optional(v.string()),
@@ -750,25 +726,8 @@ export const getSecretWordForPlayer = internalQuery({
     if (!player) {
       throw new Error("Player not found");
     }
-    
-    // For AI players, decode from known words
-    if (player.isAI) {
-      const AI_SECRET_WORDS = [
-        "CRANE", "SLATE", "ADIEU", "AUDIO", "OUIJA",
-        "RAISE", "ARISE", "IRATE", "STARE", "TEARS",
-        "ROAST", "TOAST", "COAST", "BOAST", "LEAST",
-        "BEAST", "FEAST", "HEART", "SMART", "WORLD"
-      ];
-      
-      for (const word of AI_SECRET_WORDS) {
-        if (btoa(word + "salt") === player.secretWordHash) {
-          return word;
-        }
-      }
-      return "CRANE"; // Fallback for AI
-    }
-    
-    // For human players, return the stored secret word
+
+    // Return the stored secret word
     return player.secretWord || "WORDS";
   },
 });

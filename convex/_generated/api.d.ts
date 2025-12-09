@@ -13,8 +13,6 @@ import type {
   FilterApi,
   FunctionReference,
 } from "convex/server";
-import type * as ai from "../ai.js";
-import type * as aiGame from "../aiGame.js";
 import type * as auth from "../auth.js";
 import type * as dictionary from "../dictionary.js";
 import type * as games from "../games.js";
@@ -30,8 +28,6 @@ import type * as router from "../router.js";
  * ```
  */
 declare const fullApi: ApiFromModules<{
-  ai: typeof ai;
-  aiGame: typeof aiGame;
   auth: typeof auth;
   dictionary: typeof dictionary;
   games: typeof games;

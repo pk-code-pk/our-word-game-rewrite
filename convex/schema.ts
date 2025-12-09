@@ -5,7 +5,7 @@ import { authTables } from "@convex-dev/auth/server";
 const applicationTables = {
   games: defineTable({
     code: v.string(),
-    mode: v.union(v.literal("pvp"), v.literal("vs_ai")),
+    mode: v.literal("pvp"),
     status: v.union(v.literal("waiting"), v.literal("active"), v.literal("completed")),
     public: v.boolean(),
     winnerId: v.optional(v.string()),
@@ -19,8 +19,6 @@ const applicationTables = {
     gameId: v.id("games"),
     userId: v.optional(v.id("users")),
     username: v.string(),
-    isAI: v.boolean(),
-    difficulty: v.optional(v.union(v.literal("easy"), v.literal("standard"), v.literal("hard"))),
     secretWordHash: v.string(),
     secretWord: v.optional(v.string()), // Temporary storage for demo - not secure for production
     alphabet: v.record(v.string(), v.union(v.literal("present"), v.literal("absent"), v.literal("unknown"))),

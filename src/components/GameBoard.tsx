@@ -314,7 +314,7 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
               gameId={gameId as Id<"games">}
               playerId={currentPlayer._id}
               username={currentPlayer.username}
-              disabled={!opponent || opponent.isAI || gameState.game.status !== "active"}
+              disabled={!opponent || gameState.game.status !== "active"}
             />
           </>
         )}

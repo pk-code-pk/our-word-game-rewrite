@@ -15,14 +15,13 @@ export function GameLobby({ secretWord, onGameStart, onBackToSetup }: GameLobbyP
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [joiningPublicCode, setJoiningPublicCode] = useState<string | null>(null);
-  const [difficulty, setDifficulty] = useState<"easy" | "standard" | "hard">("standard");
   const [isPublic, setIsPublic] = useState(false);
   
   const createGame = useAction(api.games.createGame);
   const joinGame = useAction(api.games.joinGame);
   const publicLobbyData = useQuery(api.games.listPublicLobbies);
 
-  const handleCreateGame = async (mode: "pvp" | "vs_ai") => {
+  const handleCreateGame = async () => {
     if (!username.trim()) {
       toast.error("Please enter a username");
       return;
@@ -34,16 +33,10 @@ export function GameLobby({ secretWord, onGameStart, onBackToSetup }: GameLobbyP
       const result = await createGame({
         username: username.trim(),
         secretWord,
-        public: mode === "pvp" ? isPublic : false,
-        mode,
-        difficulty: mode === "vs_ai" ? difficulty : undefined,
+        public: isPublic,
       });
       
-      if (mode === "pvp") {
-        toast.success(isPublic ? "Public lobby created! Waiting for an opponent." : `Game created! Share code: ${result.code}`);
-      } else {
-        toast.success("AI game started!");
-      }
+      toast.success(isPublic ? "Public lobby created! Waiting for an opponent." : `Game created! Share code: ${result.code}`);
       
       onGameStart(result.gameId);
     } catch (error) {
@@ -170,35 +163,12 @@ export function GameLobby({ secretWord, onGameStart, onBackToSetup }: GameLobbyP
             </div>
             
             <button
-              onClick={() => handleCreateGame("pvp")}
+              onClick={handleCreateGame}
               disabled={!username.trim() || isCreating}
               className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isCreating ? "Creating..." : "Create Game"}
             </button>
-
-            <div className="space-y-2">
-              <label className="block text-sm font-medium text-gray-700">
-                AI Difficulty
-              </label>
-              <select
-                value={difficulty}
-                onChange={(e) => setDifficulty(e.target.value as "easy" | "standard" | "hard")}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              >
-                <option value="easy">Easy</option>
-                <option value="standard">Standard</option>
-                <option value="hard">Hard</option>
-              </select>
-              
-              <button
-                onClick={() => handleCreateGame("vs_ai")}
-                disabled={!username.trim() || isCreating}
-                className="w-full bg-green-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {isCreating ? "Creating..." : "Play vs AI"}
-              </button>
-            </div>
           </div>
 
           {/* Join Game */}
