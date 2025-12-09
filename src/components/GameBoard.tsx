@@ -244,7 +244,7 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
         {/* Guess Input */}
         {isGameActive && (
           <form onSubmit={handleSubmitGuess} className="space-y-4">
-            <div className="flex gap-4">
+            <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Your Guess
@@ -259,14 +259,14 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
                   disabled={isSubmitting}
                 />
               </div>
-              <div>
+              <div className="w-full sm:w-52">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Guess Type
                 </label>
                 <select
                   value={guessType}
                   onChange={(e) => setGuessType(e.target.value as "fourLetter" | "fullWord")}
-                  className="px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
                   disabled={isSubmitting}
                 >
                   <option value="fourLetter">4-Letter Guess</option>

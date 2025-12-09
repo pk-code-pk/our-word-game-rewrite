@@ -10,7 +10,10 @@ const applicationTables = {
     public: v.boolean(),
     winnerId: v.optional(v.string()),
     createdAt: v.number(),
-  }).index("by_code", ["code"]),
+  })
+    .index("by_code", ["code"])
+    .index("by_public_and_status", ["public", "status", "createdAt"])
+    .index("by_status", ["status"]),
 
   players: defineTable({
     gameId: v.id("games"),

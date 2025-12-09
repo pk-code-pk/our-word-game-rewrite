@@ -517,6 +517,67 @@ export const updateAlphabet = mutation({
   },
 });
 
+export const listPublicLobbies = query({
+  args: {},
+  returns: v.object({
+    openLobbies: v.array(
+      v.object({
+        gameId: v.id("games"),
+        code: v.string(),
+        host: v.string(),
+        createdAt: v.number(),
+        players: v.number(),
+      })
+    ),
+    activeGamesCount: v.number(),
+    waitingPublicCount: v.number(),
+  }),
+  handler: async (ctx) => {
+    const openLobbies: Array<{
+      gameId: Id<"games">;
+      code: string;
+      host: string;
+      createdAt: number;
+      players: number;
+    }> = [];
+
+    for await (const game of ctx.db
+      .query("games")
+      .withIndex("by_public_and_status", (q) =>
+        q.eq("public", true).eq("status", "waiting")
+      )
+      .order("desc")) {
+      const players = await ctx.db
+        .query("players")
+        .withIndex("by_game", (q) => q.eq("gameId", game._id))
+        .collect();
+
+      if (players.length < 2) {
+        openLobbies.push({
+          gameId: game._id,
+          code: game.code,
+          host: players[0]?.username ?? "Unknown",
+          createdAt: game.createdAt,
+          players: players.length,
+        });
+      }
+    }
+
+    let activeGamesCount = 0;
+    for await (const _game of ctx.db
+      .query("games")
+      .withIndex("by_status", (q) => q.eq("status", "active"))) {
+      activeGamesCount += 1;
+    }
+
+    return {
+      openLobbies,
+      activeGamesCount,
+      waitingPublicCount: openLobbies.length,
+    };
+  },
+});
+
 export const getGameState = query({
   args: { gameId: v.id("games") },
   returns: v.union(

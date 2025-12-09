@@ -15,7 +15,7 @@ export default function App() {
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
       <header className="sticky top-0 z-10 bg-indigo-700 text-white h-16 flex justify-between items-center shadow-md px-4">
-        <h1 className="text-3xl font-bold tracking-wide">OurWordGame</h1>
+        <h1 className="text-3xl font-bold tracking-wide">FourFive</h1>
         <div className="flex items-center gap-4">
           <Authenticated>
             <nav className="flex gap-2">
@@ -84,6 +84,7 @@ function Content() {
               <ul className="text-blue-800 text-left space-y-1">
                 <li>• Each player chooses a secret 5-letter word (no duplicate letters)</li>
                 <li>• Submit 4-letter guesses to deduce your opponent's secret word</li>
+                <li>• 4-letter guesses must also avoid duplicate letters</li>
                 <li>• Get feedback on how many letters overlap between your guess and their secret word</li>
                 <li>• Make as many guesses as you need - there's no limit!</li>
                 <li>• You can also guess the full 5-letter word at any time</li>
@@ -140,6 +141,7 @@ function Content() {
               <ul className="text-blue-800 text-left space-y-1">
                 <li>• Each player chooses a secret 5-letter word (no duplicate letters)</li>
                 <li>• Submit 4-letter guesses to deduce your opponent's secret word</li>
+                <li>• 4-letter guesses must also avoid duplicate letters</li>
                 <li>• Get feedback on how many letters overlap between your guess and their secret word</li>
                 <li>• Make as many guesses as you need - there's no limit!</li>
                 <li>• You can also guess the full 5-letter word at any time</li>
