@@ -40,6 +40,17 @@ function isProduction() {
   return process.env.NODE_ENV === "production";
 }
 
+function getBuildInfo() {
+  const commit = process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.GIT_COMMIT_SHA ?? null;
+  const environment = process.env.VERCEL_ENV ?? (isProduction() ? "production" : "development");
+
+  return {
+    source: "rewrite-no-convex",
+    commit: commit ? commit.slice(0, 7) : null,
+    environment,
+  };
+}
+
 async function initializeApplication() {
   if (initialized) {
     return;
@@ -85,6 +96,10 @@ export function createApp() {
 
   app.use((_req, res, next) => {
     res.setHeader("Cache-Control", "no-store");
+    const buildInfo = getBuildInfo();
+    if (buildInfo.commit) {
+      res.setHeader("X-App-Commit", buildInfo.commit);
+    }
     next();
   });
 
@@ -103,6 +118,7 @@ export function createApp() {
     res.json({
       ok: true,
       sessionCookie: getSessionCookieName(),
+      build: getBuildInfo(),
       database: {
         provider: databaseProvider,
         ...(isProduction() ? {} : { file: databaseFile }),
