@@ -1,46 +1,62 @@
-import { useQuery, useAction } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import { Id } from "../../convex/_generated/dataModel";
-import { useState, useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
 import { ChatPanel } from "./ChatPanel";
-import confetti from "canvas-confetti";
+import { PresenceBadge } from "./PresenceBadge";
+import { api } from "../lib/api";
+import { useAuth } from "../lib/auth";
+import { usePollingQuery } from "../lib/usePollingQuery";
 
 interface GameBoardProps {
   gameId: string;
-  onGameEnd: () => void;
+  onExitToMenu: () => void;
 }
 
-export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
-  const gameState = useQuery(api.games.getGameState, { gameId: gameId as Id<"games"> });
-  const submitGuess = useAction(api.games.submitGuess);
-  const loggedInUser = useQuery(api.auth.loggedInUser);
-  
+export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
+  const { user } = useAuth();
+  const gameStateQuery = usePollingQuery(() => api.getGameState(gameId), [gameId], { intervalMs: 1500 });
+  const gameState = gameStateQuery.data?.gameState;
   const [guessText, setGuessText] = useState("");
   const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
+  const announcedCompletionRef = useRef<string | null>(null);
+  const guessFormRef = useRef<HTMLFormElement | null>(null);
+  const guessInputRef = useRef<HTMLInputElement | null>(null);
+  const myGuessesRef = useRef<HTMLDivElement | null>(null);
+  const opponentGuessesRef = useRef<HTMLDivElement | null>(null);
+  const keepMyGuessesPinnedRef = useRef(true);
+  const keepOpponentGuessesPinnedRef = useRef(true);
+  const latestGameStatusRef = useRef(gameState?.game.status);
 
-  const currentPlayer = gameState?.players.find(p => p.userId === loggedInUser?._id);
-  const opponent = gameState?.players.find(p => p.userId !== loggedInUser?._id);
-  const myGuesses = gameState?.guesses.filter(g => g.playerId === currentPlayer?._id) || [];
-  const opponentGuesses = gameState?.guesses.filter(g => g.playerId === opponent?._id) || [];
+  const currentPlayer = gameState?.me;
+  const opponent = gameState?.opponent;
+  const myGuesses = gameState?.myGuesses ?? [];
+  const opponentGuesses = gameState?.opponentGuesses ?? [];
+
+  useEffect(() => {
+    latestGameStatusRef.current = gameState?.game.status;
+  }, [gameState?.game.status]);
 
   useEffect(() => {
     if (gameState?.game.status === "completed") {
-      const winner = gameState.players.find(p => p._id === gameState.game.winnerId);
+      if (announcedCompletionRef.current === gameState.game.id) {
+        return;
+      }
+      announcedCompletionRef.current = gameState.game.id;
+
+      const winner =
+        gameState.game.winnerId === currentPlayer?.id
+          ? currentPlayer
+          : gameState.game.winnerId === opponent?.id
+          ? opponent
+          : null;
       if (winner) {
         toast.success(`Game Over! ${winner.username} wins!`);
-        
-        // Trigger confetti if current player is the winner
-        if (winner._id === currentPlayer?._id) {
-          confetti({
-            particleCount: 100,
-            spread: 70,
-            origin: { y: 0.6 }
-          });
-        } else if (currentPlayer?._id) {
-          // Show "So close!" message for the loser after a short delay
+        if (winner.id === currentPlayer?.id) {
+          confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        } else if (currentPlayer?.id) {
           setTimeout(() => {
             toast("So close!", {
               description: "Better luck next time!",
@@ -50,35 +66,79 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
         }
       }
     }
-  }, [gameState?.game.status, gameState?.players, gameState?.game.winnerId, currentPlayer?._id]);
+  }, [currentPlayer, gameState?.game.id, gameState?.game.status, gameState?.game.winnerId, opponent]);
 
-  // Scroll to the bottom of the guesses list when the guesses change
-  useEffect(() => {
-    if (gameState?.game.status === "active") {
-      const myGuessesElement = document.getElementById("my-guesses");
-      
-      if (myGuessesElement) {
-        myGuessesElement.scrollTop = myGuessesElement.scrollHeight;
-      }
+  useLayoutEffect(() => {
+    if (gameState?.game.status !== "active") {
+      return;
     }
-  }, [myGuesses]);
+
+    if (shouldPinGuessPane(myGuesses.length, keepMyGuessesPinnedRef.current)) {
+      scrollGuessPaneToBottom(myGuessesRef.current);
+    }
+  }, [gameState?.game.status, myGuesses.length]);
+
+  useLayoutEffect(() => {
+    if (gameState?.game.status !== "active") {
+      return;
+    }
+
+    if (shouldPinGuessPane(opponentGuesses.length, keepOpponentGuessesPinnedRef.current)) {
+      scrollGuessPaneToBottom(opponentGuessesRef.current);
+    }
+  }, [gameState?.game.status, opponentGuesses.length]);
 
   useEffect(() => {
-    if (gameState?.game.status === "active") {
-      const opponentGuessesElement = document.getElementById("opponent-guesses");
-      if (opponentGuessesElement) {
-        opponentGuessesElement.scrollTop = opponentGuessesElement.scrollHeight;
-      }
+    if (!currentPlayer) {
+      return;
     }
-  }, [opponentGuesses]);
+
+    const markOffline = () => {
+      if (latestGameStatusRef.current === "completed") {
+        return;
+      }
+
+      void api.markGamePresenceOffline(gameId, { keepalive: true }).catch(() => {});
+    };
+
+    window.addEventListener("pagehide", markOffline);
+
+    return () => {
+      window.removeEventListener("pagehide", markOffline);
+      markOffline();
+    };
+  }, [currentPlayer?.id, gameId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const viewport = window.visualViewport;
+    if (!viewport) {
+      return;
+    }
+
+    const keepComposerVisibleOnViewportChange = () => {
+      if (document.activeElement === guessInputRef.current) {
+        ensureComposerStaysVisible(guessFormRef.current);
+      }
+    };
+
+    viewport.addEventListener("resize", keepComposerVisibleOnViewportChange);
+    window.addEventListener("orientationchange", keepComposerVisibleOnViewportChange);
+
+    return () => {
+      viewport.removeEventListener("resize", keepComposerVisibleOnViewportChange);
+      window.removeEventListener("orientationchange", keepComposerVisibleOnViewportChange);
+    };
+  }, []);
 
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentPlayer || !guessText.trim() || isSubmitting) return;
 
     const word = guessText.trim().toUpperCase();
-    
-    // Validate length based on guess type
     if (guessType === "fourLetter" && word.length !== 4) {
       toast.error("Four-letter guesses must be exactly 4 letters");
       return;
@@ -89,26 +149,22 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
     }
 
     setIsSubmitting(true);
-    
     try {
-      const result = await submitGuess({
-        gameId: gameId as Id<"games">,
-        playerId: currentPlayer._id,
-        type: guessType,
-        text: word,
-      });
-
+      const result = await api.submitGuess(gameId, { type: guessType, text: word });
       if (result.isCorrect) {
-        toast.success("🎉 You guessed it correctly! You win!");
+        toast.success("You guessed it correctly! You win!");
       } else if (guessType === "fullWord") {
         toast.success("Guess submitted! That's not the correct word.");
       } else {
         toast.success(
-          `Guess submitted! ${result.matchCount} letter${result.matchCount !== 1 ? 's' : ''} match${result.matchCount === 1 ? 'es' : ''}`
+          `Guess submitted! ${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
         );
       }
-      
       setGuessText("");
+      keepMyGuessesPinnedRef.current = true;
+      window.requestAnimationFrame(() => {
+        guessInputRef.current?.focus({ preventScroll: true });
+      });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to submit guess");
     } finally {
@@ -116,209 +172,421 @@ export function GameBoard({ gameId, onGameEnd }: GameBoardProps) {
     }
   };
 
-  const renderGuessResult = (guess: any) => {
-    if (guess.isCorrect) {
-      return (
-        <span className="px-2 py-1 rounded text-sm font-semibold bg-green-100 text-green-800">
-          ✓ Correct!
-        </span>
-      );
-    } else if (guess.type === "fullWord") {
-      return (
-        <span className="px-2 py-1 rounded text-sm font-semibold bg-red-100 text-red-800">
-          ✗ Wrong word
-        </span>
-      );
-    } else {
-      return (
-        <span className="px-2 py-1 rounded text-sm font-semibold bg-gray-100 text-gray-800">
-          {guess.matchCount} match{guess.matchCount !== 1 ? 'es' : ''}
-        </span>
-      );
+  const handleExit = async () => {
+    if (!isWaitingForOpponent) {
+      onExitToMenu();
+      return;
+    }
+
+    if (isLeavingWaitingLobby) {
+      return;
+    }
+
+    setIsLeavingWaitingLobby(true);
+    try {
+      await api.leaveWaitingGame(gameId);
+      toast.success("Waiting lobby cancelled.");
+      setIsLeavingWaitingLobby(false);
+      onExitToMenu();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to cancel the waiting lobby.";
+      if (/only waiting lobbies can be cancelled|game already started or completed|game is not active/i.test(message)) {
+        toast(message, {
+          description: "This lobby may have filled while you were leaving. We'll keep you in the match.",
+        });
+      } else {
+        toast.error(message);
+      }
+      setIsLeavingWaitingLobby(false);
     }
   };
 
-  if (!gameState || !currentPlayer) {
+  if (gameStateQuery.loading && !gameState) {
     return (
-      <div className="flex justify-center items-center py-8">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)]">
+        <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-6">
+          <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-100" />
+          <div className="h-4 w-64 animate-pulse rounded-full bg-zinc-100" />
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="h-40 animate-pulse rounded-xl bg-zinc-100" />
+            <div className="h-40 animate-pulse rounded-xl bg-zinc-100" />
+          </div>
+          <div className="h-24 animate-pulse rounded-xl bg-zinc-100" />
+        </div>
+        <div className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
+          <div className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white" />
+          <div className="h-80 animate-pulse rounded-xl border border-zinc-200 bg-white" />
+        </div>
       </div>
     );
   }
 
+  if (!gameState || !currentPlayer) {
+    return (
+      <div className="mx-auto max-w-md rounded-xl border border-zinc-200 bg-white p-8 text-center">
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-2xl">
+          !
+        </div>
+        <h2 className="text-2xl font-black tracking-tight text-zinc-900">This game is no longer available</h2>
+        <p className="mt-3 text-sm leading-6 text-zinc-600">
+          It may have expired, been cleaned up, or your session no longer has access to it.
+        </p>
+        <button
+          onClick={onExitToMenu}
+          className="mt-6 inline-flex items-center justify-center rounded-lg bg-zinc-900 px-6 py-3 font-semibold text-white shadow-sm transition hover:bg-zinc-800"
+        >
+          Back to lobby
+        </button>
+      </div>
+    );
+  }
+
+  const presence = gameState.presence ?? {
+    me: "offline" as const,
+    opponent: opponent ? ("offline" as const) : null,
+  };
   const isGameActive = gameState.game.status === "active";
   const isWaitingForOpponent = gameState.game.status === "waiting";
+  const queryError = gameStateQuery.error;
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Left Panel - Game Board */}
-      <div className="lg:col-span-2 bg-white rounded-2xl shadow-md p-6">
-        <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-gray-900">Game Board</h2>
-          <div className="text-sm text-gray-600">
-            Status: <span className="font-semibold capitalize">{gameState.game.status}</span>
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)] lg:gap-5">
+      <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-3 border-b border-zinc-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
+                Code {gameState.game.code}
+              </span>
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
+                {gameState.game.status}
+              </span>
+              {gameState.game.public && (
+                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
+                  Public
+                </span>
+              )}
+            </div>
+            <h2 className="text-xl font-display font-bold text-zinc-900">Game board</h2>
           </div>
+          <button
+            onClick={() => void handleExit()}
+            disabled={isLeavingWaitingLobby}
+            className="inline-flex w-full items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50 sm:w-auto"
+          >
+            {isWaitingForOpponent ? (isLeavingWaitingLobby ? "Cancelling..." : "Cancel waiting lobby") : "Back to menu"}
+          </button>
         </div>
 
+        {queryError && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+            Connection is a little shaky right now, but the board will keep retrying in the background.
+          </div>
+        )}
+
         {isWaitingForOpponent && (
-          <div className="text-center py-8">
-            <div className="animate-pulse text-lg text-gray-600">
-              Waiting for opponent to join...
+          <div className="space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
+            <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center shadow-sm">
+              <div className="animate-pulse text-base font-medium text-zinc-600">Waiting for opponent to join...</div>
+              <div className="mt-3 text-sm text-zinc-500">
+                Game code{" "}
+                <span className="font-mono font-semibold tracking-widest text-zinc-700">{gameState.game.code}</span>
+              </div>
             </div>
-            <div className="mt-4 text-sm text-gray-500">
-              Game Code: <span className="font-mono font-bold">{gameState.game.code}</span>
+
+            {!user?.isAnonymous && (
+              <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm leading-6 text-zinc-600">
+                Use the <span className="font-semibold text-zinc-900">Friends</span> button above to invite someone
+                into this waiting room without leaving the board.
+              </div>
+            )}
+
+            {user?.isAnonymous && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+                Friend invites are available on saved accounts. Create an email-backed account to invite friends
+                directly into this lobby.
+              </div>
+            )}
+          </div>
+        )}
+
+        {opponent && (
+          <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-2.5">
+            <PresenceBadge
+              status={presence.me}
+              label={presence.me === "online" ? "You online" : "You offline"}
+            />
+            <PresenceBadge
+              status={presence.opponent}
+              label={
+                presence.opponent === "online"
+                  ? `${opponent.username} online`
+                  : `${opponent.username} offline`
+              }
+            />
+          </div>
+        )}
+
+        {opponent && gameState.game.status === "completed" && (
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
+              <h3 className="text-center text-sm font-semibold text-zinc-700">
+                Your secret word {currentPlayer.id === gameState.game.winnerId && "🎉"}
+              </h3>
+              <p className="mt-4 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
+                {currentPlayer.secretWord}
+              </p>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
+              <h3 className="text-center text-sm font-semibold text-zinc-700">
+                {opponent.username}'s secret word {opponent.id === gameState.game.winnerId && "🎉"}
+              </h3>
+              <p className="mt-4 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
+                {opponent.secretWord}
+              </p>
             </div>
           </div>
         )}
 
         {opponent && (
-          <>
-            {/* Show secret words when game is completed */}
-            {gameState.game.status === "completed" && (
-              <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-gradient-to-r from-blue-100 to-blue-50 rounded-lg p-4 border-2 border-blue-300">
-                  <h3 className="font-semibold text-blue-900 mb-2 text-center">
-                    Your Secret Word {currentPlayer?._id === gameState.game.winnerId && "🎉"}
-                  </h3>
-                  <div className="text-center">
-                    <span className="text-3xl font-bold font-mono text-blue-800">
-                      {currentPlayer?.secretWord}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-gradient-to-r from-orange-100 to-orange-50 rounded-lg p-4 border-2 border-orange-300">
-                  <h3 className="font-semibold text-orange-900 mb-2 text-center">
-                    {opponent.username}'s Secret Word {opponent._id === gameState.game.winnerId && "🎉"}
-                  </h3>
-                  <div className="text-center">
-                    <span className="text-3xl font-bold font-mono text-orange-800">
-                      {opponent.secretWord}
-                    </span>
-                  </div>
+          <div className="space-y-5">
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s guesses</h3>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Opponent feedback sits at the top and keeps its own scroll position.
+                  </p>
                 </div>
               </div>
-            )}
+              <GuessColumn
+                title={`${opponent.username}'s guesses (${opponentGuesses.length})`}
+                color="orange"
+                elementId="opponent-guesses"
+                guesses={opponentGuesses}
+                emptyText="No guesses yet"
+                scrollRef={opponentGuessesRef}
+                onScroll={() => {
+                  keepOpponentGuessesPinnedRef.current = isNearBottom(opponentGuessesRef.current);
+                }}
+              />
+            </section>
 
-            <div className="mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-blue-50 rounded-lg p-4">
-                <h3 className="font-semibold text-blue-900 mb-2">Your Guesses ({myGuesses.length})</h3>
-                <div id="my-guesses" className="space-y-2 max-h-40 overflow-y-auto">
-                  {myGuesses.length === 0 ? (
-                    <p className="text-blue-600 text-sm">No guesses yet</p>
-                  ) : (
-                    myGuesses.map((guess) => (
-                      <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
-                        <span className="font-mono font-bold">
-                          {guess.text} {guess.type === "fullWord" && "🎯"}
-                        </span>
-                        {renderGuessResult(guess)}
-                      </div>
-                    ))
-                  )}
+            <section className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-zinc-700">Your guesses</h3>
+                  <p className="mt-1 text-xs leading-5 text-zinc-500">
+                    Your own history stays just above the composer so the reading position stays put.
+                  </p>
                 </div>
               </div>
-
-              <div className="bg-orange-50 rounded-lg p-4">
-                <h3 className="font-semibold text-orange-900 mb-2">
-                  {opponent.username}'s Guesses ({opponentGuesses.length})
-                </h3>
-                <div id="opponent-guesses" className="space-y-2 max-h-40 overflow-y-auto">
-                  {opponentGuesses.length === 0 ? (
-                    <p className="text-orange-600 text-sm">No guesses yet</p>
-                  ) : (
-                    opponentGuesses.map((guess) => (
-                      <div key={guess._id} className="flex justify-between items-center bg-white rounded px-3 py-2">
-                        <span className="font-mono font-bold">
-                          {guess.text} {guess.type === "fullWord" && "🎯"}
-                        </span>
-                        {renderGuessResult(guess)}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Guess Input */}
-        {isGameActive && (
-          <form onSubmit={handleSubmitGuess} className="space-y-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Your Guess
-                </label>
-                <input
-                  type="text"
-                  value={guessText}
-                  onChange={(e) => setGuessText(e.target.value.toUpperCase())}
-                  placeholder={guessType === "fourLetter" ? "Enter 4-letter word" : "Enter 5-letter word"}
-                  maxLength={guessType === "fourLetter" ? 4 : 5}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-lg"
-                  disabled={isSubmitting}
+              <GuessColumn
+                title={`Your guesses (${myGuesses.length})`}
+                color="blue"
+                elementId="my-guesses"
+                guesses={myGuesses}
+                emptyText="No guesses yet"
+                scrollRef={myGuessesRef}
+                onScroll={() => {
+                  keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
+                }}
                 />
-              </div>
-              <div className="w-full sm:w-52">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Guess Type
-                </label>
-                <select
-                  value={guessType}
-                  onChange={(e) => setGuessType(e.target.value as "fourLetter" | "fullWord")}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-                  disabled={isSubmitting}
-                >
-                  <option value="fourLetter">4-Letter Guess</option>
-                  <option value="fullWord">Full Word (5 letters)</option>
-                </select>
-              </div>
-            </div>
-            
-            <button
-              type="submit"
-              disabled={!guessText.trim() || isSubmitting || 
-                (guessType === "fourLetter" && guessText.length !== 4) ||
-                (guessType === "fullWord" && guessText.length !== 5)
-              }
-              className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isSubmitting ? "Submitting..." : "Submit Guess"}
-            </button>
-          </form>
+              </section>
+
+            {isGameActive && (
+              <form
+                ref={guessFormRef}
+                onSubmit={handleSubmitGuess}
+                className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 sm:p-5"
+              >
+                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px] md:items-end">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-zinc-700">Your guess</label>
+                    <input
+                      ref={guessInputRef}
+                      type="text"
+                      value={guessText}
+                      onChange={(e) => setGuessText(e.target.value.toUpperCase())}
+                      placeholder={guessType === "fourLetter" ? "Enter 4-letter word" : "Enter 5-letter word"}
+                      maxLength={guessType === "fourLetter" ? 4 : 5}
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
+                      disabled={isSubmitting}
+                      onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
+                    />
+                  </div>
+
+                  <div>
+                    <span className="mb-2 block text-sm font-medium text-zinc-700">Guess type</span>
+                    <div className="grid grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setGuessType("fourLetter")}
+                        disabled={isSubmitting}
+                        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                          guessType === "fourLetter" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-400"
+                        }`}
+                      >
+                        4 letters
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setGuessType("fullWord")}
+                        disabled={isSubmitting}
+                        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
+                          guessType === "fullWord" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-400"
+                        }`}
+                      >
+                        Full word
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs leading-5 text-zinc-500">
+                    {guessType === "fourLetter"
+                      ? "Four-letter guesses must stay alphabetic and unique."
+                      : "A correct full word guess ends the match immediately."}
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={
+                      !guessText.trim() ||
+                      isSubmitting ||
+                      (guessType === "fourLetter" && guessText.length !== 4) ||
+                      (guessType === "fullWord" && guessText.length !== 5)
+                    }
+                    className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-5 py-2.5 font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40 sm:w-auto"
+                  >
+                    {isSubmitting ? "Submitting..." : "Submit guess"}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         )}
 
         {gameState.game.status === "completed" && (
-          <div className="mt-6 text-center">
+          <div className="flex justify-center">
             <button
-              onClick={onGameEnd}
-              className="bg-green-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+              onClick={onExitToMenu}
+              className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white transition hover:bg-emerald-700 sm:w-auto"
             >
-              Start New Game
+              Play again
             </button>
           </div>
         )}
       </div>
 
-      {/* Right Panel - Alphabet Board */}
-      <div className="lg:col-span-1 space-y-6">
-        {currentPlayer && (
-          <>
-            <AlphabetBoard
-              playerId={currentPlayer._id}
-              alphabet={currentPlayer.alphabet}
-              disabled={!isGameActive}
-            />
-            <ChatPanel
-              gameId={gameId as Id<"games">}
-              playerId={currentPlayer._id}
-              username={currentPlayer.username}
-              disabled={!opponent || gameState.game.status !== "active"}
-            />
-          </>
+      <div className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+        <ChatPanel
+          gameId={gameId}
+          currentPlayerId={currentPlayer.id}
+          username={currentPlayer.username}
+          disabled={!gameState.canChat}
+        />
+      </div>
+    </div>
+  );
+}
+
+function GuessColumn(props: {
+  title: string;
+  color: "blue" | "orange";
+  elementId: string;
+  guesses: Array<{
+    id: string;
+    text: string;
+    type: "fourLetter" | "fullWord";
+    matchCount: number;
+    isCorrect: boolean;
+  }>;
+  emptyText: string;
+  scrollRef: React.RefObject<HTMLDivElement | null>;
+  onScroll: React.UIEventHandler<HTMLDivElement>;
+}) {
+  return (
+    <div className="flex min-h-[18rem] min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
+        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
+          Scrollable
+        </span>
+      </div>
+      <div
+        ref={props.scrollRef}
+        id={props.elementId}
+        onScroll={props.onScroll}
+        className="h-[min(15rem,34dvh)] min-h-0 space-y-2 overflow-y-auto overscroll-y-contain pr-1 sm:h-[min(17rem,38dvh)] lg:h-64"
+        style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
+      >
+        {props.guesses.length === 0 ? (
+          <p className="text-sm leading-6 text-zinc-400">{props.emptyText}</p>
+        ) : (
+          props.guesses.map((guess) => (
+            <div key={guess.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+              <span className="font-mono font-bold tracking-widest text-zinc-900">
+                {guess.text} {guess.type === "fullWord" && "🎯"}
+              </span>
+              {renderGuessResult(guess)}
+            </div>
+          ))
         )}
       </div>
     </div>
   );
+}
+
+function renderGuessResult(guess: { isCorrect: boolean; type: "fourLetter" | "fullWord"; matchCount: number }) {
+  if (guess.isCorrect) {
+    return <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">Correct</span>;
+  }
+  if (guess.type === "fullWord") {
+    return <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">Wrong word</span>;
+  }
+  return (
+    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+      {guess.matchCount} match{guess.matchCount !== 1 ? "es" : ""}
+    </span>
+  );
+}
+
+function shouldPinGuessPane(guessCount: number, wasPinned: boolean) {
+  return guessCount <= 1 || wasPinned;
+}
+
+function scrollGuessPaneToBottom(element: HTMLDivElement | null) {
+  if (!element) {
+    return;
+  }
+
+  element.scrollTop = element.scrollHeight;
+}
+
+function isNearBottom(element: HTMLDivElement | null, threshold = 28) {
+  if (!element) {
+    return true;
+  }
+
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
+}
+
+function ensureComposerStaysVisible(element: HTMLElement | null) {
+  if (!element) {
+    return;
+  }
+
+  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+  const rect = element.getBoundingClientRect();
+  const topSafeArea = 16;
+  const bottomSafeArea = 20;
+  const isVisible = rect.top >= topSafeArea && rect.bottom <= viewportHeight - bottomSafeArea;
+
+  if (!isVisible) {
+    element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }

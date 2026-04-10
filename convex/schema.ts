@@ -11,6 +11,9 @@ const applicationTables = {
     public: v.boolean(),
     winnerId: v.optional(v.string()),
     createdAt: v.number(),
+    lastActivityAt: v.optional(v.number()),
+    completedAt: v.optional(v.number()),
+    rematchOf: v.optional(v.id("games")),
   })
     .index("by_code", ["code"])
     .index("by_public_and_status", ["public", "status", "createdAt"])
@@ -24,10 +27,11 @@ const applicationTables = {
     isAI: v.optional(v.boolean()),
     difficulty: v.optional(v.union(v.literal("easy"), v.literal("standard"), v.literal("hard"))),
     secretWordHash: v.string(),
-    secretWord: v.optional(v.string()), // Temporary storage for demo - not secure for production
+    secretWord: v.optional(v.string()),
     alphabet: v.record(v.string(), v.union(v.literal("present"), v.literal("absent"), v.literal("unknown"))),
     totalGuesses: v.number(),
-  }).index("by_game", ["gameId"]),
+  }).index("by_game", ["gameId"])
+    .index("by_user", ["userId"]),
 
   guesses: defineTable({
     gameId: v.id("games"),
@@ -71,6 +75,9 @@ const applicationTables = {
     gamesPlayed: v.number(),
     mostRecentUsername: v.string(),
     currentWinStreak: v.optional(v.number()),
+    recentResults: v.optional(v.array(v.union(v.literal("W"), v.literal("L")))),
+    bestWinGuesses: v.optional(v.number()),
+    updatedAt: v.optional(v.number()),
   }).index("by_user", ["userId"])
     .index("by_wins", ["wins"]),
 };

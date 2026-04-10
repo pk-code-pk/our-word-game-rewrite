@@ -1,125 +1,169 @@
-import { useState } from "react";
-import { useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import { Id } from "../../convex/_generated/dataModel";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
+import { api } from "../lib/api";
+import { getNextAlphabetState } from "../../shared/gameLogic";
+import type { AlphabetState } from "../../shared/types";
 
 interface AlphabetBoardProps {
-  playerId: Id<"players">;
+  gameId: string;
   alphabet: Record<string, "present" | "absent" | "unknown">;
   disabled?: boolean;
 }
 
 const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const STATE_LABELS: Record<AlphabetState, string> = {
+  unknown: "blank",
+  present: "green",
+  absent: "red",
+};
 
-export function AlphabetBoard({ playerId, alphabet, disabled = false }: AlphabetBoardProps) {
-  const updateAlphabet = useMutation(api.games.updateAlphabet);
-  const [isUpdating, setIsUpdating] = useState<string | null>(null);
+export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBoardProps) {
+  const [optimisticAlphabet, setOptimisticAlphabet] = useState<Partial<Record<string, AlphabetState>>>({});
+  const pendingStateRef = useRef(new Map<string, AlphabetState>());
+  const inFlightLettersRef = useRef(new Set<string>());
 
-  const handleLetterClick = async (letter: string) => {
-    if (disabled || isUpdating) return;
+  useEffect(() => {
+    setOptimisticAlphabet((current) => {
+      let changed = false;
+      const next = { ...current };
 
-    setIsUpdating(letter);
-    
-    try {
-      const currentState = alphabet[letter] || "unknown";
-      let newState: "present" | "absent" | "unknown";
-      
-      // Cycle through states: unknown -> present -> absent -> unknown
-      switch (currentState) {
-        case "unknown":
-          newState = "present";
-          break;
-        case "present":
-          newState = "absent";
-          break;
-        case "absent":
-          newState = "unknown";
-          break;
-        default:
-          newState = "unknown";
+      for (const letter of ALPHABET) {
+        if (pendingStateRef.current.has(letter) || inFlightLettersRef.current.has(letter)) {
+          continue;
+        }
+
+        if (letter in next) {
+          delete next[letter];
+          changed = true;
+        }
       }
 
-      await updateAlphabet({
-        playerId,
+      return changed ? next : current;
+    });
+  }, [alphabet]);
+
+  useEffect(() => {
+    pendingStateRef.current.clear();
+    inFlightLettersRef.current.clear();
+    setOptimisticAlphabet({});
+  }, [gameId]);
+
+  const setOptimisticLetter = (letter: string, state: AlphabetState | undefined) => {
+    setOptimisticAlphabet((current) => {
+      if (state === undefined) {
+        if (!(letter in current)) {
+          return current;
+        }
+
+        const next = { ...current };
+        delete next[letter];
+        return next;
+      }
+
+      if (current[letter] === state) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [letter]: state,
+      };
+    });
+  };
+
+  const getDisplayedState = (letter: string) => optimisticAlphabet[letter] ?? alphabet[letter] ?? "unknown";
+
+  const persistLetterState = async (letter: string) => {
+    if (inFlightLettersRef.current.has(letter)) {
+      return;
+    }
+
+    const desiredState = pendingStateRef.current.get(letter);
+    if (desiredState === undefined) {
+      return;
+    }
+
+    pendingStateRef.current.delete(letter);
+    inFlightLettersRef.current.add(letter);
+
+    try {
+      await api.updateAlphabet(gameId, {
         letter,
-        state: newState,
+        state: desiredState,
       });
     } catch (error) {
-      console.error("Failed to update alphabet:", error);
+      if (!pendingStateRef.current.has(letter)) {
+        setOptimisticLetter(letter, undefined);
+      }
+
+      toast.error(error instanceof Error ? error.message : "Failed to update alphabet");
     } finally {
-      setIsUpdating(null);
+      inFlightLettersRef.current.delete(letter);
+
+      if (pendingStateRef.current.has(letter)) {
+        void persistLetterState(letter);
+      }
     }
   };
 
-  const getLetterStyle = (letter: string) => {
-    const state = alphabet[letter] || "unknown";
-    const isLoading = isUpdating === letter;
-    
-    let baseClasses = "w-10 h-10 rounded-lg border-2 font-bold text-sm transition-all duration-200 cursor-pointer select-none flex items-center justify-center";
-    
+  const handleLetterClick = (letter: string) => {
     if (disabled) {
-      baseClasses += " cursor-not-allowed opacity-50";
-    } else if (!isLoading) {
-      baseClasses += " hover:scale-105 active:scale-95";
+      return;
+    }
+
+    const currentState = getDisplayedState(letter);
+    const newState = getNextAlphabetState(currentState);
+    setOptimisticLetter(letter, newState);
+    pendingStateRef.current.set(letter, newState);
+    void persistLetterState(letter);
+  };
+
+  const getLetterStyle = (letter: string) => {
+    const state = getDisplayedState(letter);
+    let base = "flex h-9 w-full items-center justify-center rounded border-2 text-xs font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400";
+
+    if (disabled) {
+      base += " cursor-not-allowed opacity-40";
+    } else {
+      base += " cursor-pointer hover:-translate-y-px active:translate-y-0";
     }
 
     switch (state) {
       case "present":
-        return `${baseClasses} bg-green-100 border-green-500 text-green-800 shadow-md`;
+        return `${base} border-emerald-600 bg-emerald-500 text-white`;
       case "absent":
-        return `${baseClasses} bg-red-100 border-red-500 text-red-800 shadow-md`;
-      case "unknown":
+        return `${base} border-rose-600 bg-rose-500 text-white`;
       default:
-        return `${baseClasses} bg-gray-100 border-gray-300 text-gray-700 hover:bg-gray-200`;
+        return `${base} border-zinc-300 bg-white text-zinc-700 hover:border-zinc-400`;
     }
   };
 
   return (
-    <div className="bg-white rounded-2xl shadow-md p-6">
-      <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">
-        Alphabet Board
-      </h3>
-      <p className="text-sm text-gray-600 mb-4 text-center">
-        Click letters to mark them as present (green) or absent (red)
-      </p>
-      
-      <div className="grid grid-cols-7 gap-2 max-w-sm mx-auto">
+    <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white">
+      {/* Compact header */}
+      <div className="border-b border-zinc-100 px-4 py-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-zinc-900">Alphabet</h3>
+          <span className="text-[11px] font-medium text-zinc-400">tap to mark</span>
+        </div>
+      </div>
+
+      {/* Letter grid — tile-like feel */}
+      <div className="grid grid-cols-7 gap-1.5 p-3">
         {ALPHABET.map((letter) => (
           <button
             key={letter}
+            type="button"
             onClick={() => handleLetterClick(letter)}
-            disabled={disabled || isUpdating === letter}
+            disabled={disabled}
             className={getLetterStyle(letter)}
-            title={
-              alphabet[letter] === "present" 
-                ? "Present in opponent's word" 
-                : alphabet[letter] === "absent"
-                ? "Not in opponent's word"
-                : "Unknown - click to mark"
-            }
+            aria-label={`${letter} is ${STATE_LABELS[getDisplayedState(letter)]}`}
+            aria-pressed={getDisplayedState(letter) !== "unknown"}
+            title={`${letter}: ${STATE_LABELS[getDisplayedState(letter)]}`}
           >
-            {isUpdating === letter ? (
-              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            ) : (
-              letter
-            )}
+            {letter}
           </button>
         ))}
-      </div>
-
-      <div className="mt-4 flex justify-center space-x-4 text-xs text-gray-600">
-        <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-green-100 border border-green-500 rounded"></div>
-          <span>Present</span>
-        </div>
-        <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-red-100 border border-red-500 rounded"></div>
-          <span>Absent</span>
-        </div>
-        <div className="flex items-center space-x-1">
-          <div className="w-3 h-3 bg-gray-100 border border-gray-300 rounded"></div>
-          <span>Unknown</span>
-        </div>
       </div>
     </div>
   );

@@ -1,251 +1,275 @@
 import { useState } from "react";
-import { useQuery, useAction } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
+import { api } from "../lib/api";
+import { usePollingQuery } from "../lib/usePollingQuery";
 
 interface GameLobbyProps {
   secretWord: string;
+  username: string;
+  onUsernameChange: (username: string) => void;
   onGameStart: (gameId: string) => void;
   onBackToSetup: () => void;
 }
 
-export function GameLobby({ secretWord, onGameStart, onBackToSetup }: GameLobbyProps) {
-  const [username, setUsername] = useState("");
+export function GameLobby({
+  secretWord,
+  username,
+  onUsernameChange,
+  onGameStart,
+  onBackToSetup,
+}: GameLobbyProps) {
   const [gameCode, setGameCode] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [joiningPublicCode, setJoiningPublicCode] = useState<string | null>(null);
   const [isPublic, setIsPublic] = useState(false);
-  
-  const createGame = useAction(api.games.createGame);
-  const joinGame = useAction(api.games.joinGame);
-  const publicLobbyData = useQuery(api.games.listPublicLobbies);
+
+  const publicLobbyQuery = usePollingQuery(() => api.listPublicLobbies(), [], { intervalMs: 3000 });
+  const publicLobbyData = publicLobbyQuery.data;
+  const openLobbies = publicLobbyData?.openLobbies ?? [];
+  const activeGamesCount = publicLobbyData?.activeGamesCount ?? 0;
+  const waitingPublicCount = publicLobbyData?.waitingPublicCount ?? 0;
+  const hasUsername = Boolean(username.trim());
 
   const handleCreateGame = async () => {
-    if (!username.trim()) {
+    if (!hasUsername) {
       toast.error("Please enter a username");
       return;
     }
 
     setIsCreating(true);
-    
     try {
-      const result = await createGame({
+      const result = await api.createGame({
         username: username.trim(),
         secretWord,
         public: isPublic,
       });
-      
       toast.success(isPublic ? "Public lobby created! Waiting for an opponent." : `Game created! Share code: ${result.code}`);
-      
+
+      setIsCreating(false);
       onGameStart(result.gameId);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create game");
-    } finally {
       setIsCreating(false);
+      toast.error(error instanceof Error ? error.message : "Failed to create game");
     }
   };
 
   const handleJoinGame = async () => {
-    if (!username.trim()) {
+    if (!hasUsername) {
       toast.error("Please enter a username");
       return;
     }
-    
     if (!gameCode.trim()) {
       toast.error("Please enter a game code");
       return;
     }
 
     setIsJoining(true);
-    
     try {
-      const result = await joinGame({
+      const result = await api.joinGame({
         code: gameCode.trim().toUpperCase(),
         username: username.trim(),
         secretWord,
       });
-      
       toast.success("Joined game successfully!");
+      setIsJoining(false);
       onGameStart(result.gameId);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to join game");
-    } finally {
       setIsJoining(false);
+      toast.error(error instanceof Error ? error.message : "Failed to join game");
     }
   };
 
   const handleJoinPublicGame = async (code: string) => {
-    if (!username.trim()) {
+    if (!hasUsername) {
       toast.error("Please enter a username");
       return;
     }
 
     setJoiningPublicCode(code);
     try {
-      const result = await joinGame({
+      const result = await api.joinGame({
         code,
         username: username.trim(),
         secretWord,
       });
-
       toast.success("Joined game successfully!");
+      setJoiningPublicCode(null);
       onGameStart(result.gameId);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to join game");
-    } finally {
       setJoiningPublicCode(null);
+      toast.error(error instanceof Error ? error.message : "Failed to join game");
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="bg-white rounded-2xl shadow-md p-6">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-gray-900">Ready to Play!</h2>
-          <button
-            onClick={onBackToSetup}
-            className="text-indigo-600 hover:text-indigo-800 font-medium"
-          >
-            Change Secret Word
-          </button>
-        </div>
-        
-        <div className="mb-6 p-4 bg-green-50 rounded-lg">
-          <p className="text-green-800">
-            <span className="font-semibold">Your secret word:</span> {secretWord}
-          </p>
-        </div>
-
-        <div className="mb-6">
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Your Username
-          </label>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Enter your username"
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-          />
-        </div>
-
-        <div className="mb-6 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-lg p-4">
-            <p className="text-indigo-900 font-semibold">Active games</p>
-            <p className="text-2xl font-bold text-indigo-700">
-              {publicLobbyData?.activeGamesCount ?? 0}
-            </p>
-          </div>
-          <div className="bg-green-50 border border-green-100 rounded-lg p-4">
-            <p className="text-green-900 font-semibold">Open public lobbies</p>
-            <p className="text-2xl font-bold text-green-700">
-              {publicLobbyData?.waitingPublicCount ?? 0}
-            </p>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Create Game */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Create New Game</h3>
-            <div className="flex items-start gap-2">
-              <input
-                id="public-game-toggle"
-                type="checkbox"
-                checked={isPublic}
-                onChange={(e) => setIsPublic(e.target.checked)}
-                className="mt-1 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
-              />
-              <label htmlFor="public-game-toggle" className="text-sm text-gray-700">
-                Make this a public lobby so anyone can join without a code when there's a free spot.
-              </label>
-            </div>
-            
-            <button
-              onClick={handleCreateGame}
-              disabled={!username.trim() || isCreating}
-              className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            >
-              {isCreating ? "Creating..." : "Create Game"}
-            </button>
-          </div>
-
-          {/* Join Game */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Join Existing Game</h3>
-            
+    <section className="mx-auto max-w-2xl">
+      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
+        {/* Header */}
+        <div className="border-b border-zinc-100 px-6 py-5">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Game Code
-              </label>
-              <input
-                type="text"
-                value={gameCode}
-                onChange={(e) => setGameCode(e.target.value.toUpperCase())}
-                placeholder="Enter game code"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-2xl text-center tracking-wider"
-              />
+              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Step 2 of 2</p>
+              <h2 className="mt-1.5 font-display text-2xl font-bold tracking-tight text-zinc-900">Set up your match</h2>
             </div>
-            
             <button
-              onClick={handleJoinGame}
-              disabled={!username.trim() || !gameCode.trim() || isJoining}
-              className="w-full bg-orange-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              onClick={onBackToSetup}
+              className="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
             >
-              {isJoining ? "Joining..." : "Join Game"}
+              ← Change word
             </button>
           </div>
-        </div>
-      </div>
 
-      <div className="bg-white rounded-2xl shadow-md p-6">
-        <div className="flex items-center justify-between mb-4">
+          {/* Stats row */}
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Your word</p>
+              <p className="mt-1 font-mono text-xl font-black tracking-[0.25em] text-emerald-900">{secretWord}</p>
+            </div>
+            <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Active games</p>
+              <p className="mt-1 text-2xl font-black text-zinc-900">{activeGamesCount}</p>
+            </div>
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">Open lobbies</p>
+              <p className="mt-1 text-2xl font-black text-amber-900">{waitingPublicCount}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="px-6 py-6 space-y-6">
+          {/* Username */}
           <div>
-            <h3 className="text-xl font-bold text-gray-900">Public Lobbies</h3>
-            <p className="text-sm text-gray-600">Join a waiting player instantly when a spot is open.</p>
+            <label htmlFor="lobby-display-name" className="mb-1.5 block text-sm font-medium text-zinc-700">
+              Display name
+            </label>
+            <input
+              id="lobby-display-name"
+              type="text"
+              value={username}
+              onChange={(e) => onUsernameChange(e.target.value)}
+              placeholder="Enter your username"
+              maxLength={20}
+              autoComplete="nickname"
+              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-[16px] text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+            />
+          </div>
+
+          {/* Create / Join */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Create */}
+            <div className="rounded-lg border border-zinc-200 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-zinc-900">Create game</h3>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">Host</span>
+              </div>
+              <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
+                <input
+                  id="public-game-toggle"
+                  type="checkbox"
+                  checked={isPublic}
+                  onChange={(e) => setIsPublic(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
+                />
+                <span className="text-sm text-zinc-600">Make lobby public</span>
+              </label>
+              <button
+                type="button"
+                onClick={handleCreateGame}
+                disabled={!hasUsername || isCreating}
+                className="mt-4 w-full rounded-lg bg-zinc-900 py-2.5 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isCreating ? "Creating..." : "Create Game"}
+              </button>
+              <p className="mt-2 text-xs leading-5 text-zinc-500">
+                Create the room first, then use the Friends drawer above to invite someone with the + button.
+              </p>
+            </div>
+
+            {/* Join */}
+            <div className="rounded-lg border border-zinc-200 p-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold text-zinc-900">Join with code</h3>
+                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">Join</span>
+              </div>
+              <div className="mt-3">
+                <input
+                  type="text"
+                  value={gameCode}
+                  onChange={(e) => setGameCode(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())}
+                  placeholder="XXXXXX"
+                  maxLength={6}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-xl font-bold tracking-[0.3em] text-center text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleJoinGame}
+                disabled={!hasUsername || !gameCode.trim() || isJoining}
+                className="mt-4 w-full rounded-lg border border-zinc-900 bg-white py-2.5 font-semibold text-zinc-900 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isJoining ? "Joining..." : "Join Game"}
+              </button>
+            </div>
+          </div>
+
+          {publicLobbyQuery.error && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+              Trouble loading public lobbies — you can still create or join directly.
+            </div>
+          )}
+
+          {/* Public lobbies */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-zinc-900">Public lobbies</h3>
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-500">{openLobbies.length}</span>
+            </div>
+
+            {publicLobbyQuery.loading && !publicLobbyData && (
+              <div className="space-y-2">
+                <div className="h-14 animate-pulse rounded-lg bg-zinc-100" />
+                <div className="h-14 animate-pulse rounded-lg bg-zinc-100" />
+              </div>
+            )}
+
+            {publicLobbyData && openLobbies.length === 0 && (
+              <div className="rounded-lg border border-dashed border-zinc-200 px-4 py-5 text-center text-sm text-zinc-400">
+                No public lobbies right now. Create one to appear here.
+              </div>
+            )}
+
+            {openLobbies.length > 0 && (
+              <ul className="space-y-2">
+                {openLobbies.map((lobby) => (
+                  <li
+                    key={lobby.code}
+                    className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-zinc-900">{lobby.host}</span>
+                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">{lobby.players}/2</span>
+                      </div>
+                      <p className="font-mono text-xs font-semibold tracking-widest text-zinc-400">{lobby.code}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleJoinPublicGame(lobby.code)}
+                      disabled={!hasUsername || lobby.players >= 2 || joiningPublicCode === lobby.code}
+                      className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:self-auto"
+                    >
+                      {joiningPublicCode === lobby.code ? "Joining..." : "Join"}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         </div>
-
-        {!publicLobbyData && (
-          <div className="flex justify-center items-center py-6">
-            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600"></div>
-          </div>
-        )}
-
-        {publicLobbyData && publicLobbyData.openLobbies.length === 0 && (
-          <p className="text-gray-600">No public lobbies available right now. Create one to get started!</p>
-        )}
-
-        {publicLobbyData && publicLobbyData.openLobbies.length > 0 && (
-          <div className="space-y-3">
-            {publicLobbyData.openLobbies.map((lobby) => (
-              <div
-                key={lobby.code}
-                className="border border-gray-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3"
-              >
-                <div>
-                  <p className="text-sm text-gray-500">Host</p>
-                  <p className="font-semibold text-gray-900">{lobby.host}</p>
-                  <p className="text-sm text-gray-600">Players: {lobby.players}/2</p>
-                  <p className="text-xs text-gray-500">Code: {lobby.code}</p>
-                </div>
-                <button
-                  onClick={() => handleJoinPublicGame(lobby.code)}
-                  disabled={
-                    !username.trim() ||
-                    lobby.players >= 2 ||
-                    joiningPublicCode === lobby.code
-                  }
-                  className="w-full sm:w-auto bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {joiningPublicCode === lobby.code ? "Joining..." : "Join"}
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
-    </div>
+    </section>
   );
 }

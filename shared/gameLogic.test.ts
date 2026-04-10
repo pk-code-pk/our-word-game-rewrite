@@ -1,0 +1,124 @@
+import { describe, expect, it } from "vitest";
+import {
+  buildGameStateView,
+  calculateMatchCount,
+  createEmptyAlphabet,
+  getNextAlphabetState,
+  getChatModerationError,
+  getChatRateLimitError,
+  isWaitingGameExpired,
+  pushRecentResult,
+  sanitizeChatText,
+} from "./gameLogic";
+import { getWordValidationReason, isAllowedGameWord } from "./wordBank";
+
+describe("word bank", () => {
+  it("accepts known local words and rejects invalid ones", () => {
+    expect(isAllowedGameWord("crane", 5)).toBe(true);
+    expect(isAllowedGameWord("card", 4)).toBe(true);
+    expect(isAllowedGameWord("zzzzz", 5)).toBe(false);
+    expect(getWordValidationReason("crane", 5)).toBe("");
+    expect(getWordValidationReason("apple", 5)).toContain("Duplicate");
+  });
+});
+
+describe("game helpers", () => {
+  it("creates a complete alphabet board", () => {
+    const alphabet = createEmptyAlphabet();
+    expect(Object.keys(alphabet)).toHaveLength(26);
+    expect(alphabet.A).toBe("unknown");
+    expect(alphabet.Z).toBe("unknown");
+  });
+
+  it("cycles alphabet states in the expected order", () => {
+    expect(getNextAlphabetState("unknown")).toBe("present");
+    expect(getNextAlphabetState("present")).toBe("absent");
+    expect(getNextAlphabetState("absent")).toBe("unknown");
+  });
+
+  it("counts overlapping letters correctly", () => {
+    expect(calculateMatchCount("CARD", "CRANE")).toBe(3);
+    expect(calculateMatchCount("QUIZ", "BLEND")).toBe(0);
+  });
+
+  it("redacts secret words until the game is complete", () => {
+    const baseGame = {
+      _id: "game_1" as const,
+      code: "ABC123",
+      status: "active" as const,
+      public: false,
+      createdAt: 1,
+      lastActivityAt: 2,
+      winnerId: undefined,
+    };
+    const players = [
+      {
+        _id: "player_me" as const,
+        userId: "user_me" as const,
+        username: "Me",
+        secretWord: "CRANE",
+        alphabet: createEmptyAlphabet(),
+        totalGuesses: 1,
+      },
+      {
+        _id: "player_you" as const,
+        userId: "user_you" as const,
+        username: "You",
+        secretWord: "LIGHT",
+        alphabet: createEmptyAlphabet(),
+        totalGuesses: 2,
+      },
+    ];
+    const guesses = [
+      {
+        _id: "guess_1" as const,
+        playerId: "player_me" as const,
+        type: "fourLetter" as const,
+        text: "CARD",
+        matchCount: 3,
+        isCorrect: false,
+        guessNumber: 1,
+      },
+    ];
+
+    const activeView = buildGameStateView({
+      game: baseGame,
+      players,
+      guesses,
+      viewerUserId: "user_me",
+    });
+    expect(activeView?.me.secretWord).toBeUndefined();
+    expect(activeView?.opponent?.secretWord).toBeUndefined();
+
+    const completeView = buildGameStateView({
+      game: { ...baseGame, status: "completed", winnerId: "player_me" },
+      players,
+      guesses,
+      viewerUserId: "user_me",
+    });
+    expect(completeView?.me.secretWord).toBe("CRANE");
+    expect(completeView?.opponent?.secretWord).toBe("LIGHT");
+  });
+
+  it("sanitizes and moderates chat", () => {
+    expect(sanitizeChatText(" hello   there \n\n\nfriend ")).toBe("hello there\n\nfriend");
+    expect(getChatModerationError("visit https://example.com")).toContain("blocked");
+    expect(getChatModerationError("aaaaaaaaaa")).toContain("spam");
+  });
+
+  it("enforces chat cooldown and burst limits", () => {
+    expect(getChatRateLimitError([1000], 1500)).toContain("quickly");
+    expect(getChatRateLimitError([0, 1000, 2000, 3000, 4000], 4500)).toContain("rate limit");
+    expect(getChatRateLimitError([0], 5000)).toBeNull();
+  });
+
+  it("tracks recent results and waiting expiry", () => {
+    expect(pushRecentResult(["W", "L", "W", "W", "L"], "W")).toEqual(["L", "W", "W", "L", "W"]);
+    expect(
+      isWaitingGameExpired(
+        { status: "waiting", createdAt: 0 },
+        12 * 60 * 60 * 1000 + 1
+      )
+    ).toBe(true);
+  });
+});

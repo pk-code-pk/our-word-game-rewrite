@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { useAction, useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
+import { api } from "../lib/api";
 
 interface SecretWordSetupProps {
   onSecretWordSet: (word: string) => void;
@@ -10,49 +9,31 @@ interface SecretWordSetupProps {
 export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
   const [secretWord, setSecretWord] = useState("");
   const [isValidating, setIsValidating] = useState(false);
-  
-  const validateWord = useAction(api.dictionary.validateWordPublic);
-  const loggedInUser = useQuery(api.auth.loggedInUser);
-  const checkIfUsed = useAction(api.games.checkIfWordUsed);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     const word = secretWord.trim().toUpperCase();
-    
+
     if (word.length !== 5) {
       toast.error("Secret word must be exactly 5 letters");
       return;
     }
 
     if (new Set(word).size !== word.length) {
-      const duplicates = word.split('').filter((char, index) => word.indexOf(char) !== index);
-      toast.error(`Duplicate letters not allowed. Found duplicates: ${[...new Set(duplicates)].join(', ')}`);
+      const duplicates = word.split("").filter((char, index) => word.indexOf(char) !== index);
+      toast.error(`Duplicate letters not allowed. Found duplicates: ${[...new Set(duplicates)].join(", ")}`);
       return;
     }
 
     setIsValidating(true);
-    
+
     try {
-      // Check if word is valid in dictionary
-      const isValid = await validateWord({ word });
-      if (!isValid) {
-        toast.error("Not a real dictionary word. Please choose a valid English word.");
-        setIsValidating(false);
+      const validation = await api.validateWord(word, 5);
+      if (!validation.valid) {
+        toast.error(validation.reason || "That word is not allowed.");
         return;
       }
 
-      // Check if user has used this word before
-      if (loggedInUser?._id) {
-        const hasUsed = await checkIfUsed({ word });
-        if (hasUsed) {
-          toast.error("You've already used this word before. Please pick a different secret word to stay creative!");
-          setIsValidating(false);
-          return;
-        }
-      }
-
-      // All validations passed
       onSecretWordSet(word);
       toast.success("Secret word set! Choose how to play.");
     } catch (error) {
@@ -63,45 +44,59 @@ export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
   };
 
   return (
-    <div className="max-w-md mx-auto bg-white rounded-2xl shadow-md p-6">
-      <h2 className="text-2xl font-bold text-gray-900 mb-4 text-center">
-        Choose Your Secret Word
-      </h2>
-      
-      <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-        <h3 className="font-semibold text-blue-900 mb-2">Requirements:</h3>
-        <ul className="text-blue-800 text-sm space-y-1">
-          <li>• Must be exactly 5 letters</li>
-          <li>• No duplicate letters</li>
-          <li>• Must be a real English word</li>
-          <li>• No proper nouns</li>
-        </ul>
-      </div>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            Your Secret Word
-          </label>
-          <input
-            type="text"
-            value={secretWord}
-            onChange={(e) => setSecretWord(e.target.value.toUpperCase())}
-            placeholder="Enter 5-letter word"
-            maxLength={5}
-            className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-lg text-center"
-            disabled={isValidating}
-          />
+    <section className="mx-auto max-w-xl">
+      <div className="overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-sm">
+        <div className="border-b border-zinc-100 px-5 py-5 sm:px-6">
+          <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Step 1 of 2</p>
+          <h2 className="mt-1.5 font-display text-2xl font-bold tracking-tight text-zinc-900 sm:text-[2rem]">
+            Choose your secret word
+          </h2>
         </div>
-        
-        <button
-          type="submit"
-          disabled={secretWord.length !== 5 || isValidating}
-          className="w-full bg-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          {isValidating ? "Validating..." : "Set Secret Word"}
-        </button>
-      </form>
-    </div>
+
+        <div className="px-5 py-5 sm:px-6 sm:py-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <input
+                type="text"
+                value={secretWord}
+                onChange={(e) => setSecretWord(e.target.value.toUpperCase())}
+                placeholder="_ _ _ _ _"
+                maxLength={5}
+                autoCapitalize="characters"
+                spellCheck={false}
+                className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-4 font-mono text-2xl font-bold tracking-[0.35em] text-center text-zinc-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:opacity-50 sm:text-3xl sm:tracking-[0.4em]"
+                disabled={isValidating}
+              />
+              <div className="mt-2 flex flex-col gap-1 text-xs text-zinc-400 sm:flex-row sm:items-center sm:justify-between">
+                <span>{secretWord.length}/5 letters</span>
+                <span>No duplicates · dictionary word</span>
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={secretWord.length !== 5 || isValidating}
+              className="w-full rounded-xl bg-zinc-900 py-3.5 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isValidating ? "Checking..." : "Set Secret Word →"}
+            </button>
+          </form>
+
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            {[
+              ["5 letters", "Exactly five alphabetic characters"],
+              ["No duplicates", "Each letter must appear once"],
+              ["Real word", "Must be in the dictionary"],
+              ["Letters only", "No numbers or symbols"],
+            ].map(([title, desc]) => (
+              <div key={title} className="rounded-xl border border-zinc-100 bg-zinc-50 px-3 py-3 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
+                <p className="text-xs font-semibold text-zinc-700">{title}</p>
+                <p className="mt-0.5 text-xs text-zinc-400 leading-4">{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
