@@ -7,6 +7,10 @@ interface GameLobbyProps {
   secretWord: string;
   username: string;
   onUsernameChange: (username: string) => void;
+  gameCode: string;
+  onGameCodeChange: (code: string) => void;
+  isPublic: boolean;
+  onIsPublicChange: (isPublic: boolean) => void;
   onGameStart: (gameId: string) => void;
   onBackToSetup: () => void;
 }
@@ -15,14 +19,16 @@ export function GameLobby({
   secretWord,
   username,
   onUsernameChange,
+  gameCode,
+  onGameCodeChange,
+  isPublic,
+  onIsPublicChange,
   onGameStart,
   onBackToSetup,
 }: GameLobbyProps) {
-  const [gameCode, setGameCode] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [joiningPublicCode, setJoiningPublicCode] = useState<string | null>(null);
-  const [isPublic, setIsPublic] = useState(false);
 
   const publicLobbyQuery = usePollingQuery(() => api.listPublicLobbies(), [], { intervalMs: 3000 });
   const publicLobbyData = publicLobbyQuery.data;
@@ -168,7 +174,7 @@ export function GameLobby({
                   id="public-game-toggle"
                   type="checkbox"
                   checked={isPublic}
-                  onChange={(e) => setIsPublic(e.target.checked)}
+                  onChange={(e) => onIsPublicChange(e.target.checked)}
                   className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
                 />
                 <span className="text-sm text-zinc-600">Make lobby public</span>
@@ -196,7 +202,7 @@ export function GameLobby({
                 <input
                   type="text"
                   value={gameCode}
-                  onChange={(e) => setGameCode(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())}
+                  onChange={(e) => onGameCodeChange(e.target.value.replace(/[^A-Za-z0-9]/g, "").toUpperCase())}
                   placeholder="XXXXXX"
                   maxLength={6}
                   autoCapitalize="characters"

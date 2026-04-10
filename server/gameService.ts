@@ -75,7 +75,7 @@ type UserStatsRow = {
   best_win_guesses: number | null;
 };
 
-type WaitingGameRow = {
+export type WaitingGameRow = {
   id: string;
   status: "waiting" | "active" | "completed";
   created_at: number;
@@ -193,7 +193,7 @@ function getGameStatus(gameId: string) {
   >;
 }
 
-type JoinWaitingGameParams = {
+export type JoinWaitingGameParams = {
   game: WaitingGameRow;
   user: AuthUser;
   username: string;
@@ -202,7 +202,7 @@ type JoinWaitingGameParams = {
   playerId: string;
 };
 
-function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinWaitingGameParams) {
+export function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinWaitingGameParams) {
   const runJoin = async () => {
     if (isWaitingGameExpired({ status: params.game.status, createdAt: params.game.created_at })) {
       throw new Error("Game not found.");

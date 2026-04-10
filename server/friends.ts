@@ -1,10 +1,10 @@
-import crypto from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { v4 as uuid } from "uuid";
 import { requireUser } from "./auth.js";
 import { db } from "./db.js";
-import { createEmptyAlphabet, isValidUsername, isWaitingGameExpired, normalizeWord, sanitizeUsername } from "../shared/gameLogic.js";
+import { isValidUsername, isWaitingGameExpired, normalizeWord, sanitizeUsername } from "../shared/gameLogic.js";
 import { getWordValidationReason } from "../shared/wordBank.js";
+import { performJoinWaitingGameWithRunner } from "./gameService.js";
 import type {
   AuthUser,
   FriendRequestStatus,
@@ -68,12 +68,10 @@ type GameInviteRow = {
   host_username: string | null;
 };
 
+type DbRunner = Pick<typeof db, "prepare" | "exec">;
+
 function now() {
   return Date.now();
-}
-
-function encodeSecretWord(word: string) {
-  return crypto.createHash("sha256").update(word).digest("hex");
 }
 
 function assertValidDictionaryWord(word: string, expectedLength?: 4 | 5) {
@@ -183,19 +181,27 @@ async function getPendingFriendRequestBetween(userId: string, otherUserId: strin
     | undefined;
 }
 
-async function getFriendshipBetween(userId: string, otherUserId: string) {
+async function getFriendshipBetweenFrom(runner: DbRunner, userId: string, otherUserId: string) {
   const { lowUserId, highUserId } = sortPair(userId, otherUserId);
-  return (await db
+  return (await runner
     .prepare(`SELECT id FROM friendships WHERE user_one_id = ? AND user_two_id = ?`)
     .get(lowUserId, highUserId)) as { id: string } | undefined;
 }
 
-async function ensureUsersAreFriends(userId: string, otherUserId: string) {
-  const friendship = await getFriendshipBetween(userId, otherUserId);
+async function getFriendshipBetween(userId: string, otherUserId: string) {
+  return getFriendshipBetweenFrom(db, userId, otherUserId);
+}
+
+async function ensureUsersAreFriendsFrom(runner: DbRunner, userId: string, otherUserId: string) {
+  const friendship = await getFriendshipBetweenFrom(runner, userId, otherUserId);
   if (!friendship) {
     throw new Error("You can only invite confirmed friends.");
   }
   return friendship;
+}
+
+async function ensureUsersAreFriends(userId: string, otherUserId: string) {
+  return ensureUsersAreFriendsFrom(db, userId, otherUserId);
 }
 
 async function createFriendshipFromRequest(
@@ -356,8 +362,8 @@ async function getFriendRequestById(requestId: string) {
     .get(requestId)) as FriendRequestRow | undefined;
 }
 
-async function getGameInviteById(inviteId: string) {
-  return (await db
+async function getGameInviteByIdFrom(runner: DbRunner, inviteId: string) {
+  return (await runner
     .prepare(
       `SELECT game_invites.id, game_invites.status, game_invites.created_at, game_invites.responded_at,
               games.id AS game_id, games.code AS game_code, games.status AS game_status, games.public AS public,
@@ -377,67 +383,8 @@ async function getGameInviteById(inviteId: string) {
     .get(inviteId)) as GameInviteRow | undefined;
 }
 
-async function joinWaitingGameInTransaction(params: {
-  game: {
-    id: string;
-    status: "waiting" | "active" | "completed";
-    created_at: number;
-  };
-  user: AuthUser;
-  username: string;
-  secretWord: string;
-  createdAt: number;
-  playerId: string;
-}) {
-  const { game, user, username, secretWord, createdAt, playerId } = params;
-
-  if (isWaitingGameExpired({ status: game.status, createdAt: game.created_at })) {
-    throw new Error("Waiting game not found.");
-  }
-  if (game.status !== "waiting") {
-    throw new Error("Game already started or completed.");
-  }
-
-  const existingPlayers = (await db
-    .prepare(`SELECT user_id FROM players WHERE game_id = ? ORDER BY created_at ASC`)
-    .all(game.id)) as Array<{ user_id: string }>;
-
-  if (existingPlayers.some((player) => player.user_id === user.id)) {
-    throw new Error("You can't join your own game from the same account.");
-  }
-  if (existingPlayers.length >= 2) {
-    throw new Error("Game is full.");
-  }
-
-  await db.prepare(
-    `INSERT INTO players (id, game_id, user_id, username, secret_word_hash, secret_word, alphabet_json, total_guesses, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)`
-  ).run(
-    playerId,
-    game.id,
-    user.id,
-    username,
-    encodeSecretWord(secretWord),
-    secretWord,
-    JSON.stringify(createEmptyAlphabet()),
-    createdAt
-  );
-
-  await db.prepare(
-    `INSERT INTO player_presence (
-      player_id, game_id, user_id, presence_state, last_seen_at, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(player_id) DO UPDATE SET
-      game_id = excluded.game_id,
-      user_id = excluded.user_id,
-      presence_state = excluded.presence_state,
-      last_seen_at = excluded.last_seen_at,
-      updated_at = excluded.updated_at`
-  ).run(playerId, game.id, user.id, "online", createdAt, createdAt, createdAt);
-
-  await db.prepare(`UPDATE games SET status = 'active', last_activity_at = ? WHERE id = ?`).run(createdAt, game.id);
-
-  return { gameId: game.id };
+async function getGameInviteById(inviteId: string) {
+  return getGameInviteByIdFrom(db, inviteId);
 }
 
 export async function searchUsers(user: AuthUser, queryInput: string): Promise<SocialSearchResult[]> {
@@ -814,8 +761,8 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
 
   await ensureUsersAreFriends(user.id, receiver.id);
 
-  const createInvite = db.transaction(async () => {
-    const game = (await db
+  const createInvite = db.transaction(async (tx) => {
+    const game = (await tx
       .prepare(
         `SELECT games.id, games.code, games.status
          FROM games
@@ -831,7 +778,7 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
       throw new Error("Only waiting games can be invited to friends.");
     }
 
-    const playerCount = (await db
+    const playerCount = (await tx
       .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ?`)
       .get(game.id)) as { count: number };
     if (playerCount.count !== 1) {
@@ -839,7 +786,7 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
     }
 
     const inviteId = uuid();
-    const inserted = await db
+    const inserted = await tx
       .prepare(
       `INSERT INTO game_invites (
           id, game_id, sender_user_id, receiver_user_id, status, created_at
@@ -862,8 +809,8 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
 
 export async function cancelGameInvite(user: AuthUser, inviteId: string) {
   assertRegisteredUser(user);
-  const cancelInvite = db.transaction(async () => {
-    const invite = await getGameInviteById(inviteId);
+  const cancelInvite = db.transaction(async (tx) => {
+    const invite = await getGameInviteByIdFrom(tx, inviteId);
     if (!invite || invite.status !== "pending") {
       throw new Error("Game invite not found.");
     }
@@ -871,7 +818,7 @@ export async function cancelGameInvite(user: AuthUser, inviteId: string) {
       throw new Error("You can only cancel invites you sent.");
     }
 
-    const updated = await db
+    const updated = await tx
       .prepare(
         `UPDATE game_invites
          SET status = 'canceled', responded_at = ?
@@ -891,8 +838,8 @@ export async function cancelGameInvite(user: AuthUser, inviteId: string) {
 
 export async function declineGameInvite(user: AuthUser, inviteId: string) {
   assertRegisteredUser(user);
-  const declineInvite = db.transaction(async () => {
-    const invite = await getGameInviteById(inviteId);
+  const declineInvite = db.transaction(async (tx) => {
+    const invite = await getGameInviteByIdFrom(tx, inviteId);
     if (!invite || invite.status !== "pending") {
       throw new Error("Game invite not found.");
     }
@@ -900,7 +847,7 @@ export async function declineGameInvite(user: AuthUser, inviteId: string) {
       throw new Error("You can only decline invites sent to you.");
     }
 
-    const updated = await db
+    const updated = await tx
       .prepare(
         `UPDATE game_invites
          SET status = 'declined', responded_at = ?
@@ -929,8 +876,8 @@ export async function acceptGameInvite(
   await expireInvalidPendingGameInvites();
 
   let joinedGameId = "";
-  const acceptInvite = db.transaction(async () => {
-    const invite = await getGameInviteById(inviteId);
+  const acceptInvite = db.transaction(async (tx) => {
+    const invite = await getGameInviteByIdFrom(tx, inviteId);
     if (!invite || invite.status !== "pending") {
       throw new Error("Game invite not found.");
     }
@@ -938,9 +885,9 @@ export async function acceptGameInvite(
       throw new Error("You can only accept invites sent to you.");
     }
 
-    await ensureUsersAreFriends(invite.sender_id, invite.receiver_id);
+    await ensureUsersAreFriendsFrom(tx, invite.sender_id, invite.receiver_id);
 
-    const game = (await db
+    const game = (await tx
       .prepare(`SELECT id, status, created_at FROM games WHERE id = ?`)
       .get(invite.game_id)) as
       | { id: string; status: "waiting" | "active" | "completed"; created_at: number }
@@ -961,7 +908,7 @@ export async function acceptGameInvite(
 
     const createdAt = now();
     const playerId = uuid();
-    const joinResult = await joinWaitingGameInTransaction({
+    const joinResult = await performJoinWaitingGameWithRunner(tx, {
       game,
       user,
       username,
@@ -971,7 +918,7 @@ export async function acceptGameInvite(
     });
     joinedGameId = joinResult.gameId;
 
-    const accepted = await db
+    const accepted = await tx
       .prepare(
         `UPDATE game_invites
          SET status = 'accepted', responded_at = ?
@@ -983,7 +930,7 @@ export async function acceptGameInvite(
       throw new Error("Game invite not found.");
     }
 
-    await db.prepare(
+    await tx.prepare(
       `UPDATE game_invites
        SET status = 'expired', responded_at = ?
        WHERE game_id = ? AND id != ? AND status = 'pending'`

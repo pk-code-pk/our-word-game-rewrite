@@ -1,5 +1,5 @@
 import { Toaster } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { SecretWordSetup } from "./components/SecretWordSetup";
@@ -14,7 +14,19 @@ import { SignInForm } from "./SignInForm";
 import { SignOutButton } from "./SignOutButton";
 import { useAuth } from "./lib/auth";
 import { api } from "./lib/api";
+import {
+  clearActiveGame,
+  createDefaultPlayState,
+  readStoredPlayState,
+  resetPlayState,
+  writeStoredPlayState,
+  type PlayState,
+} from "./lib/playState";
 import { usePollingQuery } from "./lib/usePollingQuery";
+
+function isRecoverableInviteLobbyError(message: string) {
+  return /waiting game not found|game not found|no longer available|already started|game is full/i.test(message);
+}
 
 export default function App() {
   const { user, isAuthenticated } = useAuth();
@@ -105,11 +117,9 @@ function Content() {
     intervalMs: 5000,
   });
 
-  const [secretWord, setSecretWord] = useState("");
-  const [currentGameId, setCurrentGameId] = useState("");
-  const [gamePhase, setGamePhase] = useState<"setup" | "lobby" | "playing">("setup");
-  const previousUserIdRef = useRef<string | null>(null);
-  const [username, setUsername] = useState("");
+  const [playState, setPlayState] = useState<PlayState>(() =>
+    user?.id ? readStoredPlayState(user.id, user) : createDefaultPlayState(user)
+  );
   const [socialRefreshKey, setSocialRefreshKey] = useState(0);
 
   function refreshSocialData() {
@@ -117,76 +127,14 @@ function Content() {
   }
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (!user?.id) {
-      setUsername("");
-      return;
-    }
-
-    const scopedKey = `fourfive.username.${user.id}`;
-    const storedUsername = window.localStorage.getItem(scopedKey) ?? user.username ?? "";
-
-    // Legacy global usernames from older builds can bleed between accounts.
-    if (window.localStorage.getItem("fourfive.username") !== null) {
-      window.localStorage.removeItem("fourfive.username");
-    }
-
-    setUsername(storedUsername);
-  }, [user?.id, user?.username]);
-
-  useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
       return;
     }
 
-    const scopedKey = `fourfive.username.${user.id}`;
-    if (username.trim()) {
-      window.localStorage.setItem(scopedKey, username);
-    } else {
-      window.localStorage.removeItem(scopedKey);
-    }
-  }, [username, user?.id]);
+    writeStoredPlayState(user.id, playState);
+  }, [playState, user?.id]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    if (!user?.id) {
-      setSecretWord("");
-      return;
-    }
-
-    const scopedKey = `fourfive.secretWord.${user.id}`;
-    const storedSecretWord = window.localStorage.getItem(scopedKey) ?? "";
-    setSecretWord(storedSecretWord);
-  }, [user?.id]);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !user?.id) {
-      return;
-    }
-
-    const scopedKey = `fourfive.secretWord.${user.id}`;
-    if (secretWord.trim()) {
-      window.localStorage.setItem(scopedKey, secretWord.trim());
-    } else {
-      window.localStorage.removeItem(scopedKey);
-    }
-  }, [secretWord, user?.id]);
-
-  useEffect(() => {
-    const currentUserId = user?.id ?? null;
-    if (previousUserIdRef.current !== currentUserId) {
-      setSecretWord("");
-      setCurrentGameId("");
-      setGamePhase("setup");
-      previousUserIdRef.current = currentUserId;
-    }
-  }, [user?.id]);
+  const { username, secretWord, currentGameId, gamePhase, lobbyCode: gameCode, isPublic } = playState;
 
   if (loading) {
     return (
@@ -222,21 +170,30 @@ function Content() {
           return;
         }
 
-        toast("Finish this game or return to the lobby before starting a new invite room.");
-        return;
+        if (response.gameState) {
+          toast("Finish this game or return to the lobby before starting a new invite room.");
+          return;
+        }
+
+        setPlayState((prev) => clearActiveGame(prev));
       } catch (error) {
-        throw error instanceof Error ? error : new Error("Unable to check the current room.");
+        const message = error instanceof Error ? error.message : "Unable to check the current room.";
+        if (!isRecoverableInviteLobbyError(message)) {
+          throw error instanceof Error ? error : new Error(message);
+        }
+
+        setPlayState((prev) => clearActiveGame(prev));
       }
     }
 
     if (!secretWord) {
-      setGamePhase("setup");
+      setPlayState((prev) => ({ ...prev, gamePhase: "setup" }));
       toast("Choose your secret word first.");
       return;
     }
 
     if (!trimmedUsername) {
-      setGamePhase("lobby");
+      setPlayState((prev) => ({ ...prev, gamePhase: "lobby" }));
       toast("Set your display name first, then tap + again.");
       return;
     }
@@ -245,11 +202,19 @@ function Content() {
 
     try {
       if (reusableWaitingGame) {
-        await api.sendGameInvite(reusableWaitingGame.gameId, friend.userId);
-        toast.success(`Invite sent to ${friend.displayName} in room ${reusableWaitingGame.code}.`);
-        setCurrentGameId(reusableWaitingGame.gameId);
-        setGamePhase("playing");
-        return;
+        try {
+          await api.sendGameInvite(reusableWaitingGame.gameId, friend.userId);
+          toast.success(`Invite sent to ${friend.displayName} in room ${reusableWaitingGame.code}.`);
+          setPlayState((prev) => ({ ...prev, currentGameId: reusableWaitingGame.gameId, gamePhase: "playing", lobbyCode: "" }));
+          return;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "Unable to reuse the current waiting room.";
+          if (!isRecoverableInviteLobbyError(message)) {
+            throw error instanceof Error ? error : new Error(message);
+          }
+
+          setPlayState((prev) => clearActiveGame(prev));
+        }
       }
 
       createdGame = await api.createGame({
@@ -259,12 +224,10 @@ function Content() {
       });
       await api.sendGameInvite(createdGame.gameId, friend.userId);
       toast.success(`Room ${createdGame.code} created and invite sent to ${friend.displayName}.`);
-      setCurrentGameId(createdGame.gameId);
-      setGamePhase("playing");
+      setPlayState((prev) => ({ ...prev, currentGameId: createdGame.gameId, gamePhase: "playing", lobbyCode: "" }));
     } catch (error) {
       if (createdGame) {
-        setCurrentGameId(createdGame.gameId);
-        setGamePhase("playing");
+        setPlayState((prev) => ({ ...prev, currentGameId: createdGame.gameId, gamePhase: "playing", lobbyCode: "" }));
         throw error instanceof Error
           ? new Error(`${error.message} Your room was still created, so you can invite again from there.`)
           : new Error("Your room was created, but the invite could not be sent.");
@@ -296,8 +259,7 @@ function Content() {
               refreshKey={socialRefreshKey}
               onSocialMutated={refreshSocialData}
               onOpenGame={(gameId) => {
-                setCurrentGameId(gameId);
-                setGamePhase("playing");
+                setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
               }}
             />
           </div>
@@ -313,8 +275,7 @@ function Content() {
           key={currentGameId}
           gameId={currentGameId}
           onExitToMenu={() => {
-            setCurrentGameId("");
-            setGamePhase("setup");
+            setPlayState((prev) => clearActiveGame(prev));
           }}
         />
       </div>
@@ -334,8 +295,7 @@ function Content() {
           <RecentGamesPanel
             games={recentGames}
             onOpenGame={(gameId) => {
-              setCurrentGameId(gameId);
-              setGamePhase("playing");
+              setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
             }}
           />
 
@@ -358,9 +318,10 @@ function Content() {
 
           {gamePhase === "setup" && (
             <SecretWordSetup
+              secretWord={secretWord}
+              onSecretWordChange={(word) => setPlayState((prev) => ({ ...prev, secretWord: word }))}
               onSecretWordSet={(word) => {
-                setSecretWord(word);
-                setGamePhase("lobby");
+                setPlayState((prev) => ({ ...prev, secretWord: word, currentGameId: "", gamePhase: "lobby" }));
               }}
             />
           )}
@@ -369,14 +330,16 @@ function Content() {
             <GameLobby
               secretWord={secretWord}
               username={username}
-              onUsernameChange={setUsername}
+              onUsernameChange={(value) => setPlayState((prev) => ({ ...prev, username: value }))}
+              gameCode={gameCode}
+              onGameCodeChange={(value) => setPlayState((prev) => ({ ...prev, lobbyCode: value }))}
+              isPublic={isPublic}
+              onIsPublicChange={(value) => setPlayState((prev) => ({ ...prev, isPublic: value }))}
               onGameStart={(gameId) => {
-                setCurrentGameId(gameId);
-                setGamePhase("playing");
+                setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
               }}
               onBackToSetup={() => {
-                setSecretWord("");
-                setGamePhase("setup");
+                setPlayState((prev) => resetPlayState(prev));
               }}
             />
           )}

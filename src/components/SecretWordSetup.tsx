@@ -3,11 +3,12 @@ import { toast } from "sonner";
 import { api } from "../lib/api";
 
 interface SecretWordSetupProps {
+  secretWord: string;
+  onSecretWordChange: (word: string) => void;
   onSecretWordSet: (word: string) => void;
 }
 
-export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
-  const [secretWord, setSecretWord] = useState("");
+export function SecretWordSetup({ secretWord, onSecretWordChange, onSecretWordSet }: SecretWordSetupProps) {
   const [isValidating, setIsValidating] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -59,7 +60,7 @@ export function SecretWordSetup({ onSecretWordSet }: SecretWordSetupProps) {
               <input
                 type="text"
                 value={secretWord}
-                onChange={(e) => setSecretWord(e.target.value.toUpperCase())}
+                onChange={(e) => onSecretWordChange(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 5))}
                 placeholder="_ _ _ _ _"
                 maxLength={5}
                 autoCapitalize="characters"
