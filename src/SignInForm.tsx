@@ -3,37 +3,27 @@ import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 import { useAuth } from "./lib/auth";
 
-type SignInFormProps = {
-  mode?: "default" | "upgrade";
-};
-
 const LAST_AUTH_IDENTIFIER_KEY = "fourfive.lastAuthIdentifier";
 
-export function resolvePreferredAuthIdentifier(_isUpgradeMode: boolean, rememberedIdentifier: string) {
-  if (_isUpgradeMode) {
-    return "";
-  }
-
+export function resolvePreferredAuthIdentifier(rememberedIdentifier: string) {
   return rememberedIdentifier.trim();
 }
 
-function readPreferredAuthIdentifier(isUpgradeMode: boolean) {
+function readPreferredAuthIdentifier() {
   if (typeof window === "undefined") {
     return "";
   }
 
   const rememberedIdentifier = window.localStorage.getItem(LAST_AUTH_IDENTIFIER_KEY) ?? "";
-  return resolvePreferredAuthIdentifier(isUpgradeMode, rememberedIdentifier);
+  return resolvePreferredAuthIdentifier(rememberedIdentifier);
 }
 
-export function SignInForm({ mode = "default" }: SignInFormProps) {
+export function SignInForm() {
   const auth = useAuth();
-  const isUpgradeMode = mode === "upgrade";
-  const [flow, setFlow] = useState<"signIn" | "signUp">(() => (isUpgradeMode ? "signUp" : "signIn"));
+  const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
   const [identifier, setIdentifier] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [anonymousSubmitting, setAnonymousSubmitting] = useState(false);
-  const effectiveFlow = isUpgradeMode ? "signUp" : flow;
   const isDeploymentProtectionBlocked = Boolean(auth.errorMessage?.includes("Vercel Authentication"));
 
   useEffect(() => {
@@ -41,8 +31,8 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
       return;
     }
 
-    setIdentifier(readPreferredAuthIdentifier(isUpgradeMode));
-  }, [isUpgradeMode]);
+    setIdentifier(readPreferredAuthIdentifier());
+  }, []);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -53,7 +43,7 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
 
     try {
       const authenticatedUser =
-        effectiveFlow === "signIn" ? await auth.signIn(identifier, password) : await auth.signUp(identifier, password);
+        flow === "signIn" ? await auth.signIn(identifier, password) : await auth.signUp(identifier, password);
 
       if (typeof window !== "undefined") {
         const rememberedIdentifier = authenticatedUser?.username?.trim() || identifier.trim();
@@ -71,41 +61,31 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
   return (
     <div className="w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-8">
       <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">
-          {isUpgradeMode ? "Guest upgrade" : "Account"}
-        </p>
-        <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">
-          {isUpgradeMode ? "Create your account" : "Play FourFive"}
-        </h2>
-        <p className="text-sm leading-6 text-zinc-600">
-          {isUpgradeMode
-            ? "Pick a username and password to keep this guest session and unlock friends."
-            : "Sign in, create an account, or play anonymously."}
-        </p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Account</p>
+        <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">Play FourFive</h2>
+        <p className="text-sm leading-6 text-zinc-600">Sign in, create an account, or play anonymously.</p>
       </div>
 
-      {!isUpgradeMode ? (
-        <div className="mt-6 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 shadow-inner">
-          <button
-            type="button"
-            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-              flow === "signIn" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
-            }`}
-            onClick={() => setFlow("signIn")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-              flow === "signUp" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
-            }`}
-            onClick={() => setFlow("signUp")}
-          >
-            Create account
-          </button>
-        </div>
-      ) : null}
+      <div className="mt-6 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 shadow-inner">
+        <button
+          type="button"
+          className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+            flow === "signIn" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+          }`}
+          onClick={() => setFlow("signIn")}
+        >
+          Sign in
+        </button>
+        <button
+          type="button"
+          className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
+            flow === "signUp" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+          }`}
+          onClick={() => setFlow("signUp")}
+        >
+          Create account
+        </button>
+      </div>
 
       {auth.errorMessage ? (
         <div
@@ -133,7 +113,7 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
             autoCapitalize="none"
             required
           />
-          {effectiveFlow === "signUp" ? (
+          {flow === "signUp" ? (
             <span className="block text-xs leading-5 text-zinc-500">
               Use 2-20 characters with letters, numbers, hyphens, or underscores.
             </span>
@@ -145,8 +125,8 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
             className="auth-input-field text-[16px]"
             type="password"
             name="password"
-            placeholder={effectiveFlow === "signIn" ? "Enter your password" : "Create a password"}
-            autoComplete={effectiveFlow === "signIn" ? "current-password" : "new-password"}
+            placeholder={flow === "signIn" ? "Enter your password" : "Create a password"}
+            autoComplete={flow === "signIn" ? "current-password" : "new-password"}
             required
           />
         </label>
@@ -155,50 +135,42 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
           disabled={submitting}
           className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-zinc-900 px-4 py-3 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {submitting ? "Working..." : effectiveFlow === "signIn" ? "Sign in" : isUpgradeMode ? "Create account" : "Create account"}
+          {submitting ? "Working..." : flow === "signIn" ? "Sign in" : "Create account"}
         </button>
       </form>
 
-      {!isUpgradeMode ? (
-        <>
-          <div className="my-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
-            <span className="h-px flex-1 bg-zinc-200" />
-            <span>or</span>
-            <span className="h-px flex-1 bg-zinc-200" />
-          </div>
+      <div className="my-5 flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">
+        <span className="h-px flex-1 bg-zinc-200" />
+        <span>or</span>
+        <span className="h-px flex-1 bg-zinc-200" />
+      </div>
 
-          <button
-            type="button"
-            disabled={submitting || anonymousSubmitting}
-            className="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-3 font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => {
-              if (submitting || anonymousSubmitting) {
-                return;
-              }
+      <button
+        type="button"
+        disabled={submitting || anonymousSubmitting}
+        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-3 font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => {
+          if (submitting || anonymousSubmitting) {
+            return;
+          }
 
-              setAnonymousSubmitting(true);
-              void auth
-                .signInAnonymous()
-                .catch((error) => {
-                  toast.error(error instanceof Error ? error.message : "Anonymous sign-in failed.");
-                })
-                .finally(() => {
-                  setAnonymousSubmitting(false);
-                });
-            }}
-          >
-            {anonymousSubmitting ? "Working..." : "Play anonymously"}
-          </button>
+          setAnonymousSubmitting(true);
+          void auth
+            .signInAnonymous()
+            .catch((error) => {
+              toast.error(error instanceof Error ? error.message : "Anonymous sign-in failed.");
+            })
+            .finally(() => {
+              setAnonymousSubmitting(false);
+            });
+        }}
+      >
+        {anonymousSubmitting ? "Working..." : "Play anonymously"}
+      </button>
 
-          <p className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-xs leading-5 text-zinc-500">
-            Anonymous play works for jumping into games quickly. Friends and invites are only available on saved accounts.
-          </p>
-        </>
-      ) : (
-        <p className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-center text-xs leading-5 text-emerald-800">
-          Creating an account keeps this guest session attached to one username.
-        </p>
-      )}
+      <p className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-xs leading-5 text-zinc-500">
+        Anonymous play works for jumping into games quickly. Friends and invites are only available on saved accounts.
+      </p>
     </div>
   );
 }

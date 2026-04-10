@@ -273,50 +273,6 @@ export function signUp(username: string, password: string): MaybePromise<string>
   });
 }
 
-export function upgradeAnonymousAccount(userId: string, username: string, password: string): MaybePromise<void> {
-  const normalizedUsername = normalizeAccountUsername(username);
-  assertValidCredentials(password);
-  const passwordHash = bcrypt.hashSync(password, 10);
-  const user = db
-    .prepare(`SELECT id, is_anonymous FROM users WHERE id = ?`)
-    .get(userId) as MaybePromise<{ id: string; is_anonymous: number } | undefined>;
-
-  return flatMapMaybePromise(user, (resolvedUser) => {
-    if (!resolvedUser || !resolvedUser.is_anonymous) {
-      throw new Error("This guest session can no longer be upgraded.");
-    }
-
-    return flatMapMaybePromise(assertUsernameAvailable(normalizedUsername, userId), () => {
-      let result: MaybePromise<unknown>;
-
-      try {
-        result = db
-          .prepare(`UPDATE users SET email = NULL, username = ?, password_hash = ?, is_anonymous = 0 WHERE id = ?`)
-          .run(normalizedUsername, passwordHash, userId);
-      } catch (error) {
-        if (isUsernameConflictError(error)) {
-          throw new Error("That username is already taken.");
-        }
-        throw error;
-      }
-
-      if (isPromiseLike(result)) {
-        return result.then(
-          () => undefined,
-          (error) => {
-            if (isUsernameConflictError(error)) {
-              throw new Error("That username is already taken.");
-            }
-            throw error;
-          }
-        );
-      }
-
-      return undefined;
-    });
-  });
-}
-
 export function signIn(identifier: string, password: string): MaybePromise<string> {
   assertValidPassword(password);
   return flatMapMaybePromise(findUserForSignIn(identifier), (user) => {

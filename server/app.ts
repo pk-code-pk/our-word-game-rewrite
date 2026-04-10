@@ -12,7 +12,6 @@ import {
   signIn,
   signInAnonymously,
   signUp,
-  upgradeAnonymousAccount,
 } from "./auth.js";
 import { databaseFile, databaseProvider, initDb } from "./db.js";
 import { createSocialRouter } from "./friends.js";
@@ -82,10 +81,6 @@ function respondWithRouteError(res: express.Response, error: unknown, fallbackMe
   res.status(status).json({ error: message });
 }
 
-function isStaleGuestSessionError(error: unknown) {
-  return error instanceof Error && error.message === "This guest session can no longer be upgraded.";
-}
-
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
@@ -138,28 +133,11 @@ export function createApp() {
       const currentUser = await getUserFromRequest(req);
       const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
 
-      if (currentUser && !currentUser.isAnonymous) {
+      if (currentUser) {
         res.status(400).json({
           error: "You're already signed in. Sign out to create a different account.",
         });
         return;
-      }
-
-      if (currentUser?.isAnonymous) {
-        try {
-          await upgradeAnonymousAccount(
-            currentUser.id,
-            req.body.username ?? req.body.identifier ?? req.body.email ?? "",
-            req.body.password ?? ""
-          );
-          await createSession(res, currentUser.id, { replaceExistingSessionId: currentSessionId });
-          res.json({ ok: true, user: await getUserById(currentUser.id) });
-          return;
-        } catch (error) {
-          if (!isStaleGuestSessionError(error)) {
-            throw error;
-          }
-        }
       }
 
       const userId = await signUp(req.body.username ?? req.body.identifier ?? req.body.email ?? "", req.body.password ?? "");

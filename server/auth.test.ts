@@ -11,11 +11,7 @@ import {
   signIn,
   signInAnonymously,
   signUp,
-  upgradeAnonymousAccount,
 } from "./auth.js";
-import { createGame, getPlayerGames } from "./gameService.js";
-import { listSocialOverview } from "./friends.js";
-import { v4 as uuid } from "uuid";
 
 function createMockRequest(sessionId?: string) {
   return {
@@ -128,107 +124,7 @@ describe("auth", () => {
     await expect(Promise.resolve().then(() => signUp("player", "supersecret"))).rejects.toThrow("already taken");
   });
 
-  it("upgrades an anonymous guest in place without changing the session", async () => {
-    const guestId = await signInAnonymously();
-    const response = createMockResponse();
-    await createSession(response, guestId);
-
-    const sessionId = response.cookie.mock.calls[0]?.[1];
-    if (typeof sessionId !== "string") {
-      throw new Error("Expected session cookie to be created.");
-    }
-
-    await upgradeAnonymousAccount(guestId, "guest-player", "supersecret");
-
-    const updatedSession = db
-      .prepare(`SELECT user_id FROM sessions WHERE id = ?`)
-      .get(sessionId) as { user_id: string } | undefined;
-    const upgradedUser = db
-      .prepare(`SELECT id, email, username, is_anonymous, password_hash FROM users WHERE id = ?`)
-      .get(guestId) as
-      | {
-          id: string;
-          email: string | null;
-          username: string | null;
-          is_anonymous: number;
-          password_hash: string | null;
-        }
-      | undefined;
-    const requestUser = await getUserFromRequest(createMockRequest(sessionId));
-    const sessionCount = db
-      .prepare(`SELECT COUNT(*) AS count FROM sessions WHERE user_id = ?`)
-      .get(guestId) as { count: number } | undefined;
-
-    expect(updatedSession?.user_id).toBe(guestId);
-    expect(upgradedUser).toMatchObject({
-      id: guestId,
-      email: null,
-      username: "guest-player",
-      is_anonymous: 0,
-    });
-    expect(upgradedUser?.password_hash).toEqual(expect.any(String));
-    expect(requestUser).toMatchObject({
-      id: guestId,
-      email: null,
-      username: "guest-player",
-      isAnonymous: false,
-    });
-    expect(requestUser?.createdAt).toEqual(expect.any(Number));
-    expect(sessionCount?.count ?? 0).toBe(1);
-  });
-
-  it("keeps guest social and game history attached after upgrade", async () => {
-    const guestId = await signInAnonymously();
-    const response = createMockResponse();
-    await createSession(response, guestId);
-
-    const sessionId = response.cookie.mock.calls[0]?.[1];
-    if (typeof sessionId !== "string") {
-      throw new Error("Expected session cookie to be created.");
-    }
-
-    const guestUser = await getUserFromRequest(createMockRequest(sessionId));
-    if (!guestUser) {
-      throw new Error("Expected guest user to resolve from the session.");
-    }
-
-    const friendId = await signUp("friend-player", "supersecret");
-    const friendGame = await createGame(guestUser, "Guest", "CRANE", false);
-    db.prepare(
-      `INSERT INTO friendships (id, user_one_id, user_two_id, created_at, request_id) VALUES (?, ?, ?, ?, NULL)`
-    ).run(uuid(), guestId, friendId, Date.now());
-
-    await upgradeAnonymousAccount(guestId, "guest-upgrade", "supersecret");
-
-    const upgradedUser = await getUserFromRequest(createMockRequest(sessionId));
-    if (!upgradedUser) {
-      throw new Error("Expected upgraded user to resolve from the session.");
-    }
-
-    const social = await listSocialOverview(upgradedUser);
-    const games = await getPlayerGames(upgradedUser);
-
-    expect(upgradedUser).toMatchObject({
-      id: guestId,
-      email: null,
-      username: "guest-upgrade",
-      isAnonymous: false,
-    });
-    expect(social.friends).toHaveLength(1);
-    expect(social.friends[0]?.userId).toBe(friendId);
-    expect(games.some((game) => game.gameId === friendGame.gameId)).toBe(true);
-  });
-
-  it("rejects upgrading a guest to a username that already exists", async () => {
-    await signUp("taken-name", "supersecret");
-    const guestId = await signInAnonymously();
-
-    await expect(
-      Promise.resolve().then(() => upgradeAnonymousAccount(guestId, "taken-name", "supersecret"))
-    ).rejects.toThrow("already taken");
-  });
-
-  it("rotates the session when upgrading an anonymous guest through the signup route", async () => {
+  it("rejects creating an account while a guest session is active", async () => {
     const guestId = await signInAnonymously();
     const response = createMockResponse();
     await createSession(response, guestId);
@@ -246,41 +142,32 @@ describe("auth", () => {
           Cookie: `${getSessionCookieName()}=${sessionId}`,
         },
         body: JSON.stringify({
-          username: "route-guest",
+          username: "route-new-account",
           password: "supersecret",
         }),
       });
 
       const body = (await result.json()) as {
-        ok: boolean;
-        user?: { id: string; email: string | null; username: string; isAnonymous: boolean };
+        error?: string;
       };
 
-      expect(result.status).toBe(200);
-      expect(body.user).toMatchObject({
-        id: guestId,
-        email: null,
-        username: "route-guest",
-        isAnonymous: false,
-      });
+      expect(result.status).toBe(400);
+      expect(body.error).toMatch(/already signed in/i);
     });
 
-    const upgradedUser = db
+    const guestUser = db
       .prepare(`SELECT id, email, username, is_anonymous FROM users WHERE id = ?`)
       .get(guestId) as { id: string; email: string | null; username: string | null; is_anonymous: number } | undefined;
-    const rotatedSession = db
+    const activeSession = db
       .prepare(`SELECT id, user_id FROM sessions WHERE user_id = ?`)
       .get(guestId) as { id: string; user_id: string } | undefined;
 
-    expect(upgradedUser).toMatchObject({
+    expect(guestUser).toMatchObject({
       id: guestId,
       email: null,
-      username: "route-guest",
-      is_anonymous: 0,
+      is_anonymous: 1,
     });
-    expect(rotatedSession?.id).toBeTruthy();
-    expect(rotatedSession?.id).not.toBe(sessionId);
-    expect(db.prepare(`SELECT id FROM sessions WHERE id = ?`).get(sessionId)).toBeUndefined();
+    expect(activeSession?.id).toBe(sessionId);
   });
 
   it("accepts a username on the signin route and creates a live session", async () => {
