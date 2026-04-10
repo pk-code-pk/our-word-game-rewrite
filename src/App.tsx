@@ -108,7 +108,6 @@ function Nav(props: {
           Scores
         </button>
       </nav>
-      <SignOutButton />
     </div>
   );
 }
