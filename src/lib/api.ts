@@ -63,7 +63,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+    const responseText = await response.text().catch(() => "");
+    let payload: { error?: string } | null = null;
+
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText) as { error?: string };
+      } catch {
+        payload = null;
+      }
+    }
+
+    const fallbackMessage = `Request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`;
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent(AUTH_ERROR_EVENT, {
@@ -74,7 +85,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
         })
       );
     }
-    throw new ApiError(response.status, payload?.error ?? "Request failed.", payload);
+    throw new ApiError(response.status, payload?.error ?? fallbackMessage, payload);
   }
 
   return (await response.json()) as T;

@@ -437,6 +437,10 @@ async function remoteExec(sql: string) {
 let initPromise: Promise<void> | null = null;
 
 export function initDb(): MaybePromise<void> {
+  if (process.env.NODE_ENV === "production" && !usingRemoteDatabase) {
+    throw new Error("DATABASE_URL is required in production.");
+  }
+
   if (!usingRemoteDatabase) {
     localExec(`
       CREATE TABLE IF NOT EXISTS users (

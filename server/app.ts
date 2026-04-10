@@ -304,6 +304,20 @@ export function createApp() {
     res.json({ leaderboard: await getLeaderboard() });
   });
 
+  app.use((_req, res) => {
+    res.status(404).json({ error: "Route not found." });
+  });
+
+  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (res.headersSent) {
+      return;
+    }
+
+    const message = error instanceof Error ? error.message : "Internal server error.";
+    const status = message === "You must be signed in." ? 401 : 500;
+    res.status(status).json({ error: message });
+  });
+
   return app;
 }
 
