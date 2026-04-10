@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildGameStateView,
   calculateMatchCount,
+  countDiscoveredSecretLetters,
   createEmptyAlphabet,
   getNextAlphabetState,
   getChatModerationError,
@@ -39,6 +40,16 @@ describe("game helpers", () => {
   it("counts overlapping letters correctly", () => {
     expect(calculateMatchCount("CARD", "CRANE")).toBe(3);
     expect(calculateMatchCount("QUIZ", "BLEND")).toBe(0);
+  });
+
+  it("counts only correctly identified letters from the opponent alphabet", () => {
+    const opponentAlphabet = createEmptyAlphabet();
+    opponentAlphabet.C = "present";
+    opponentAlphabet.R = "present";
+    opponentAlphabet.Z = "present";
+    opponentAlphabet.A = "absent";
+
+    expect(countDiscoveredSecretLetters("CRANE", opponentAlphabet)).toBe(2);
   });
 
   it("redacts secret words until the game is complete", () => {
@@ -94,7 +105,7 @@ describe("game helpers", () => {
     });
     expect(activeView?.me.secretWord).toBeUndefined();
     expect(activeView?.opponent?.secretWord).toBeUndefined();
-    expect(activeView?.opponentPresentLetterCount).toBe(2);
+    expect(activeView?.opponentFoundLetterCount).toBe(2);
 
     const completeView = buildGameStateView({
       game: { ...baseGame, status: "completed", winnerId: "player_me" },
@@ -104,7 +115,7 @@ describe("game helpers", () => {
     });
     expect(completeView?.me.secretWord).toBe("CRANE");
     expect(completeView?.opponent?.secretWord).toBe("LIGHT");
-    expect(completeView?.opponentPresentLetterCount).toBe(2);
+    expect(completeView?.opponentFoundLetterCount).toBe(2);
   });
 
   it("sanitizes and moderates chat", () => {

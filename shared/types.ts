@@ -70,8 +70,7 @@ export interface GameStateView {
     secretWord?: string;
   };
   myGuesses: GuessView[];
-  opponentPresentLetterCount: number | null;
-  canChat: boolean;
+  opponentFoundLetterCount: number | null;
   presence: {
     me: PresenceState;
     opponent: PresenceState | null;

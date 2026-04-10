@@ -28,7 +28,6 @@ describe("normalizeGameStateResponse", () => {
         },
         myGuesses: [],
         opponentGuesses: [],
-        canChat: true,
       },
     });
 
@@ -37,8 +36,39 @@ describe("normalizeGameStateResponse", () => {
       me: "offline",
       opponent: "offline",
     });
-    expect(payload.gameState?.canChat).toBe(true);
-    expect(payload.gameState?.opponentPresentLetterCount).toBeNull();
+    expect(payload.gameState?.opponentFoundLetterCount).toBeNull();
+  });
+
+  it("preserves the server-derived opponent progress count when present", () => {
+    const payload = normalizeGameStateResponse({
+      gameState: {
+        game: {
+          id: "game-3",
+          code: "FOUND1",
+          status: "active",
+          public: false,
+          createdAt: 1,
+          lastActivityAt: 3,
+        },
+        me: {
+          id: "player-1",
+          username: "Host",
+          alphabet: {
+            A: "unknown",
+          },
+          totalGuesses: 1,
+        },
+        opponent: {
+          id: "player-2",
+          username: "Joiner",
+          totalGuesses: 2,
+        },
+        myGuesses: [],
+        opponentFoundLetterCount: 4,
+      },
+    });
+
+    expect(payload.gameState?.opponentFoundLetterCount).toBe(4);
   });
 
   it("keeps opponent presence null when there is no opponent yet", () => {
@@ -67,9 +97,8 @@ describe("normalizeGameStateResponse", () => {
       me: "offline",
       opponent: null,
     });
-    expect(payload.gameState?.canChat).toBe(false);
     expect(payload.gameState?.me.alphabet).toEqual({});
-    expect(payload.gameState?.opponentPresentLetterCount).toBeNull();
+    expect(payload.gameState?.opponentFoundLetterCount).toBeNull();
   });
 });
 

@@ -1,7 +1,6 @@
 import type {
   AlphabetState,
   AuthUser,
-  ChatMessageView,
   GameStateView,
   LeaderboardEntry,
   PresenceState,
@@ -63,6 +62,7 @@ type LegacyGameStateResponse = {
           me?: PresenceState;
           opponent?: PresenceState | null;
         };
+        opponentFoundLetterCount?: number | null;
         opponentPresentLetterCount?: number | null;
         opponentGuesses?: Array<{
           id: string;
@@ -156,11 +156,12 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
       },
       opponent,
       myGuesses: gameState.myGuesses ?? [],
-      opponentPresentLetterCount:
-        opponent && typeof gameState.opponentPresentLetterCount === "number"
+      opponentFoundLetterCount:
+        opponent && typeof gameState.opponentFoundLetterCount === "number"
+          ? gameState.opponentFoundLetterCount
+          : opponent && typeof gameState.opponentPresentLetterCount === "number"
           ? gameState.opponentPresentLetterCount
           : null,
-      canChat: gameState.canChat ?? Boolean(opponent && gameState.game.status === "active"),
       presence: {
         me: gameState.presence?.me ?? "offline",
         opponent: opponent ? (gameState.presence?.opponent ?? "offline") : null,
@@ -238,13 +239,6 @@ export const api = {
         body: JSON.stringify(payload),
       }
     ),
-  listChatMessages: (gameId: string) =>
-    request<{ messages: ChatMessageView[] }>(`/api/games/${gameId}/chat`),
-  sendChatMessage: (gameId: string, text: string) =>
-    request<{ messageId: string }>(`/api/games/${gameId}/chat`, {
-      method: "POST",
-      body: JSON.stringify({ text }),
-    }),
   markGamePresenceOffline: (gameId: string, options?: { keepalive?: boolean }) =>
     request<{ presence: "offline" }>(`/api/games/${gameId}/presence/offline`, {
       method: "POST",

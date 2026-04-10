@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
-import { ChatPanel } from "./ChatPanel";
 import { PresenceBadge } from "./PresenceBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
@@ -31,7 +30,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const currentPlayer = gameState?.me;
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
-  const opponentPresentLetterCount = gameState?.opponentPresentLetterCount ?? null;
+  const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
   useEffect(() => {
     latestGameStatusRef.current = gameState?.game.status;
@@ -191,7 +190,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   if (gameStateQuery.loading && !gameState) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
         <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-6">
           <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-100" />
           <div className="h-4 w-64 animate-pulse rounded-full bg-zinc-100" />
@@ -201,9 +200,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           </div>
           <div className="h-24 animate-pulse rounded-xl bg-zinc-100" />
         </div>
-        <div className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
+        <div className="min-w-0 lg:sticky lg:top-16 lg:self-start">
           <div className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white" />
-          <div className="h-80 animate-pulse rounded-xl border border-zinc-200 bg-white" />
         </div>
       </div>
     );
@@ -238,24 +236,18 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,auto)] lg:gap-5">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
       <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-3 border-b border-zinc-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
-                Code {gameState.game.code}
-              </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
-                {gameState.game.status}
-              </span>
-              {gameState.game.public && (
-                <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
-                  Public
-                </span>
-              )}
-            </div>
-            <h2 className="text-xl font-display font-bold text-zinc-900">Game board</h2>
+          <div className="space-y-1">
+            <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
+              Code {gameState.game.code}
+            </span>
+            {opponent ? (
+              <p className="text-sm text-zinc-500">Playing against {opponent.username}</p>
+            ) : (
+              <p className="text-sm text-zinc-500">Waiting for an opponent to join.</p>
+            )}
           </div>
           <button
             onClick={() => void handleExit()}
@@ -338,64 +330,25 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-5">
-            <section className="space-y-3">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s green letters</h3>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    This updates from their alphabet board and shows how many letters they currently marked green.
+            <section className="overflow-hidden rounded-xl border border-zinc-200 bg-emerald-50 p-5 shadow-sm">
+              <div className="flex items-end justify-between gap-4">
+                <div className="min-w-0">
+                  <p className="text-lg font-semibold tracking-tight text-emerald-950">
+                    {opponent.username} has found {opponentFoundLetterCount ?? "—"} of your letters
                   </p>
+                  {opponentFoundLetterCount === null ? (
+                    <p className="mt-1 text-sm text-emerald-900/70">Waiting for their board to sync.</p>
+                  ) : null}
                 </div>
-              </div>
-              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s current total</p>
-                    <p className="mt-1 text-xs leading-5 text-zinc-500">
-                      Counted from the letters they have marked green right now.
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-                    Live board signal
-                  </span>
-                </div>
-                <div className="mt-5 flex items-end justify-between gap-4 rounded-xl bg-emerald-50 px-4 py-5">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Green letters</p>
-                    <p className="mt-1 text-xs leading-5 text-emerald-900/80">
-                      {opponentPresentLetterCount === null
-                        ? "Temporarily unavailable while the board catches up."
-                        : "Their self-marked alphabet count."}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-mono text-4xl font-black tracking-tight text-emerald-700">
-                      {opponentPresentLetterCount ?? "—"}
-                    </div>
-                    <div className="mt-1 text-xs font-medium text-emerald-800/80">
-                      {opponentPresentLetterCount === null
-                        ? "waiting on board state"
-                        : opponentPresentLetterCount === 1
-                        ? "letter marked"
-                        : "letters marked"}
-                    </div>
-                  </div>
-                </div>
+                <span className="font-mono text-4xl font-black tracking-tight text-emerald-700">
+                  {opponentFoundLetterCount ?? "—"}
+                </span>
               </div>
             </section>
 
-            <section className="space-y-3">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <h3 className="text-sm font-semibold text-zinc-700">Your guesses</h3>
-                  <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Your own history stays just above the composer so the reading position stays put.
-                  </p>
-                </div>
-              </div>
+            <section>
               <GuessColumn
-                title={`Your guesses (${myGuesses.length})`}
-                color="blue"
+                title="Your guesses"
                 elementId="my-guesses"
                 guesses={myGuesses}
                 emptyText="No guesses yet"
@@ -403,8 +356,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 onScroll={() => {
                   keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
                 }}
-                />
-              </section>
+              />
+            </section>
 
             {isGameActive && (
               <form
@@ -437,32 +390,45 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                         type="button"
                         onClick={() => setGuessType("fourLetter")}
                         disabled={isSubmitting}
-                        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                          guessType === "fourLetter" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-400"
+                        className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                          guessType === "fourLetter"
+                            ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                            : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
                         }`}
+                        aria-pressed={guessType === "fourLetter"}
                       >
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full border ${
+                            guessType === "fourLetter" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+                          }`}
+                          aria-hidden="true"
+                        />
                         4 letters
                       </button>
                       <button
                         type="button"
                         onClick={() => setGuessType("fullWord")}
                         disabled={isSubmitting}
-                        className={`rounded-md px-3 py-2 text-sm font-semibold transition ${
-                          guessType === "fullWord" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-400"
+                        className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                          guessType === "fullWord"
+                            ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                            : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
                         }`}
+                        aria-pressed={guessType === "fullWord"}
                       >
+                        <span
+                          className={`h-2.5 w-2.5 rounded-full border ${
+                            guessType === "fullWord" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+                          }`}
+                          aria-hidden="true"
+                        />
                         Full word
                       </button>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                  <p className="text-xs leading-5 text-zinc-500">
-                    {guessType === "fourLetter"
-                      ? "Four-letter guesses must stay alphabetic and unique."
-                      : "A correct full word guess ends the match immediately."}
-                  </p>
+                <div className="flex justify-end">
                   <button
                     type="submit"
                     disabled={
@@ -493,14 +459,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
       </div>
 
-      <div className="min-w-0 space-y-4 lg:sticky lg:top-16 lg:self-start">
+      <div className="min-w-0 lg:sticky lg:top-16 lg:self-start">
         <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
-        <ChatPanel
-          gameId={gameId}
-          currentPlayerId={currentPlayer.id}
-          username={currentPlayer.username}
-          disabled={!gameState.canChat}
-        />
       </div>
     </div>
   );
@@ -508,7 +468,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
 function GuessColumn(props: {
   title: string;
-  color: "blue" | "orange";
   elementId: string;
   guesses: Array<{
     id: string;
@@ -523,17 +482,14 @@ function GuessColumn(props: {
 }) {
   return (
     <div className="flex min-h-[18rem] min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
-      <div className="mb-3 flex items-start justify-between gap-3">
+      <div className="mb-3">
         <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
-        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-          Scrollable
-        </span>
       </div>
       <div
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="h-[min(15rem,34dvh)] min-h-0 space-y-2 overflow-y-auto overscroll-y-contain pr-1 sm:h-[min(17rem,38dvh)] lg:h-64"
+        className="h-[min(15rem,34dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(17rem,38dvh)] lg:h-64"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {props.guesses.length === 0 ? (

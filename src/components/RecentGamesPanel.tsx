@@ -26,9 +26,6 @@ export function RecentGamesPanel({ games, onOpenGame }: RecentGamesPanelProps) {
           <h3 className="font-display font-bold text-zinc-900">Resume a game</h3>
           <p className="mt-0.5 text-sm text-zinc-500">Jump back into your recent matches.</p>
         </div>
-        <span className="inline-flex w-fit items-center rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-500">
-          {games.slice(0, 6).length}
-        </span>
       </div>
 
       <ul className="divide-y divide-zinc-100">
@@ -39,15 +36,7 @@ export function RecentGamesPanel({ games, onOpenGame }: RecentGamesPanelProps) {
                 <span className="text-sm font-semibold text-zinc-900">
                   {game.opponentName ? `vs ${game.opponentName}` : "Waiting for opponent"}
                 </span>
-                <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold ${
-                  game.status === "active" ? "bg-emerald-100 text-emerald-800" :
-                  game.status === "waiting" ? "bg-amber-100 text-amber-800" :
-                  "bg-zinc-100 text-zinc-600"
-                }`}>
-                  {game.status}
-                </span>
                 {game.isExpired && <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700">Expired</span>}
-                {game.public && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-700">Public</span>}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-zinc-400">
                 <span className="font-mono font-semibold tracking-widest text-zinc-500">{game.code}</span>

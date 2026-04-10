@@ -6,10 +6,8 @@ import {
   getGameState,
   getLeaderboard,
   joinGame,
-  listChatMessages,
   listPublicLobbies,
   markGamePresenceOffline,
-  sendChatMessage,
   submitGuess,
   updateAlphabet,
 } from "./gameService.js";
@@ -39,6 +37,11 @@ describe("game service", () => {
   beforeEach(() => {
     initDb();
     db.exec(`
+      PRAGMA foreign_keys = OFF;
+      DELETE FROM game_invites;
+      DELETE FROM friendships;
+      DELETE FROM friend_requests;
+      DELETE FROM player_presence;
       DELETE FROM chat_messages;
       DELETE FROM guesses;
       DELETE FROM players;
@@ -46,6 +49,7 @@ describe("game service", () => {
       DELETE FROM sessions;
       DELETE FROM user_stats;
       DELETE FROM users;
+      PRAGMA foreign_keys = ON;
     `);
     currentNow = 1_700_000_000_000;
     vi.spyOn(Date, "now").mockImplementation(() => currentNow);
@@ -106,7 +110,7 @@ describe("game service", () => {
     expect(bravoState?.opponent?.secretWord).toBeUndefined();
   });
 
-  it("supports chat and completed-game reveal plus leaderboard updates", () => {
+  it("reveals secret words after completion and updates the leaderboard", () => {
     const alpha = makeUser("user-alpha", "alpha@example.com");
     const bravo = makeUser("user-bravo", "bravo@example.com");
     seedUser(alpha);
@@ -114,11 +118,6 @@ describe("game service", () => {
 
     const created = createGame(alpha, "Alpha", "CRANE", true);
     joinGame(bravo, created.code, "Bravo", "LIGHT");
-
-    sendChatMessage(bravo, created.gameId, "hello there");
-    const alphaMessages = listChatMessages(alpha, created.gameId);
-    expect(alphaMessages).toHaveLength(1);
-    expect(alphaMessages[0]?.text).toBe("hello there");
 
     const result = submitGuess(alpha, created.gameId, "fullWord", "LIGHT");
     expect(result.isCorrect).toBe(true);
@@ -168,7 +167,7 @@ describe("game service", () => {
     expect(alphaViewAfterExplicitOffline?.presence.opponent).toBe("offline");
   });
 
-  it("returns the opponent's current green alphabet count in game state", () => {
+  it("returns how many of your real letters the opponent has identified", () => {
     const alpha = makeUser("user-alpha", "alpha@example.com");
     const bravo = makeUser("user-bravo", "bravo@example.com");
     seedUser(alpha);
@@ -177,15 +176,16 @@ describe("game service", () => {
     const created = createGame(alpha, "Alpha", "CRANE", true);
     joinGame(bravo, created.code, "Bravo", "LIGHT");
 
-    updateAlphabet(bravo, created.gameId, "L", "present");
-    updateAlphabet(bravo, created.gameId, "I", "present");
-    updateAlphabet(bravo, created.gameId, "G", "absent");
+    updateAlphabet(bravo, created.gameId, "C", "present");
+    updateAlphabet(bravo, created.gameId, "R", "present");
+    updateAlphabet(bravo, created.gameId, "Z", "present");
+    updateAlphabet(bravo, created.gameId, "A", "absent");
 
     const alphaState = getGameState(alpha, created.gameId);
     const bravoState = getGameState(bravo, created.gameId);
 
-    expect(alphaState?.opponentPresentLetterCount).toBe(2);
-    expect(bravoState?.opponentPresentLetterCount).toBe(0);
+    expect(alphaState?.opponentFoundLetterCount).toBe(2);
+    expect(bravoState?.opponentFoundLetterCount).toBe(0);
   });
 
   it("rate limits rapid guess spam while allowing normal pacing", () => {

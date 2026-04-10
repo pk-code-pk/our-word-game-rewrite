@@ -61,28 +61,45 @@ export function SignInForm() {
   return (
     <div className="w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-8">
       <div className="space-y-2">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-700">Account</p>
         <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">Play FourFive</h2>
-        <p className="text-sm leading-6 text-zinc-600">Sign in, create an account, or play anonymously.</p>
+        <p className="text-sm leading-6 text-zinc-600">Sign in, make an account, or keep going as a guest.</p>
       </div>
 
       <div className="mt-6 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 shadow-inner">
         <button
           type="button"
-          className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-            flow === "signIn" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+          className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${
+            flow === "signIn"
+              ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+              : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
           }`}
           onClick={() => setFlow("signIn")}
+          aria-pressed={flow === "signIn"}
         >
+          <span
+            className={`h-2.5 w-2.5 rounded-full border ${
+              flow === "signIn" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+            }`}
+            aria-hidden="true"
+          />
           Sign in
         </button>
         <button
           type="button"
-          className={`min-h-11 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
-            flow === "signUp" ? "bg-white text-zinc-900 shadow-sm" : "text-zinc-500 hover:text-zinc-900"
+          className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${
+            flow === "signUp"
+              ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+              : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
           }`}
           onClick={() => setFlow("signUp")}
+          aria-pressed={flow === "signUp"}
         >
+          <span
+            className={`h-2.5 w-2.5 rounded-full border ${
+              flow === "signUp" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+            }`}
+            aria-hidden="true"
+          />
           Create account
         </button>
       </div>
@@ -165,11 +182,11 @@ export function SignInForm() {
             });
         }}
       >
-        {anonymousSubmitting ? "Working..." : "Play anonymously"}
+        {anonymousSubmitting ? "Working..." : "Continue as guest"}
       </button>
 
       <p className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-xs leading-5 text-zinc-500">
-        Anonymous play works for jumping into games quickly. Friends and invites are only available on saved accounts.
+        Friends are available on saved accounts.
       </p>
     </div>
   );

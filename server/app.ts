@@ -23,10 +23,8 @@ import {
   getGameState,
   getPlayerGames,
   joinGame,
-  listChatMessages,
   listPublicLobbies,
   markGamePresenceOffline,
-  sendChatMessage,
   submitGuess,
   updateAlphabet,
 } from "./gameService.js";
@@ -247,24 +245,6 @@ export function createApp() {
       });
     } catch (error) {
       respondWithRouteError(res, error, "Could not update alphabet.");
-    }
-  });
-
-  app.get("/api/games/:gameId/chat", async (req, res) => {
-    try {
-      const user = await requireUser(req);
-      res.json({ messages: await listChatMessages(user, req.params.gameId) });
-    } catch (error) {
-      respondWithRouteError(res, error, "Could not load chat messages.");
-    }
-  });
-
-  app.post("/api/games/:gameId/chat", async (req, res) => {
-    try {
-      const user = await requireUser(req);
-      res.json(await sendChatMessage(user, req.params.gameId, req.body.text ?? ""));
-    } catch (error) {
-      respondWithRouteError(res, error, "Could not send chat message.");
     }
   });
 

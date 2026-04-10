@@ -872,8 +872,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      opponentPresentLetterCount: view.opponentPresentLetterCount,
-      canChat: view.canChat,
+      opponentFoundLetterCount: view.opponentFoundLetterCount,
       presence: {
         me: resolvePresence(view.me._id),
         opponent: view.opponent ? resolvePresence(view.opponent._id) : null,
@@ -1010,8 +1009,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      opponentPresentLetterCount: view.opponentPresentLetterCount,
-      canChat: view.canChat,
+      opponentFoundLetterCount: view.opponentFoundLetterCount,
       presence: {
         me: resolvePresence(view.me._id),
         opponent: view.opponent ? resolvePresence(view.opponent._id) : null,

@@ -36,14 +36,8 @@ export default function App() {
     <div className="min-h-[100dvh] overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
       <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
         <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:px-6">
-          <div className="flex min-w-0 items-center gap-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-black text-zinc-950 shadow-sm">
-              45
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-lg font-display font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
-              <p className="hidden text-[11px] font-medium text-zinc-400 sm:block">Word deduction arena</p>
-            </div>
+          <div className="min-w-0">
+            <h1 className="truncate text-lg font-display font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
           </div>
           <div className="justify-self-end">
             <SignOutButton />
@@ -59,7 +53,7 @@ export default function App() {
           <ScreenErrorBoundary resetKey={`${user?.id ?? "anonymous"}:${currentView}`}>
             {user?.isAnonymous ? (
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
-                <strong>Guest session.</strong> Sign out if you want to create an account and use friends.
+                <strong>Guest mode.</strong> Sign out if you want a saved account and friends.
               </div>
             ) : null}
             {currentView === "game" ? <Content key={user?.id ?? "anonymous"} /> : <Leaderboard />}
@@ -84,27 +78,39 @@ function Nav(props: {
 
   return (
     <div className="flex w-full items-center">
-      <nav className="grid w-full grid-cols-2 items-center rounded-xl border border-zinc-700 bg-zinc-900 p-1 shadow-sm md:w-auto md:min-w-[15rem]">
+      <nav className="grid w-full grid-cols-2 items-center rounded-xl border border-zinc-700 bg-zinc-900/90 p-1 shadow-sm md:w-auto md:min-w-[15rem]">
         <button
           type="button"
           onClick={() => props.onChange("game")}
-          className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+          className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${
             props.currentView === "game"
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-400 hover:text-white"
+              ? "border-zinc-700 bg-zinc-800 text-white"
+              : "border-transparent text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
           }`}
+          aria-pressed={props.currentView === "game"}
         >
+          <span
+            className={`h-2.5 w-2.5 rounded-full border transition ${
+              props.currentView === "game" ? "border-white bg-white" : "border-zinc-500 bg-transparent"
+            }`}
+          />
           Play
         </button>
         <button
           type="button"
           onClick={() => props.onChange("leaderboard")}
-          className={`min-h-10 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+          className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${
             props.currentView === "leaderboard"
-              ? "bg-white text-zinc-900 shadow-sm"
-              : "text-zinc-400 hover:text-white"
+              ? "border-zinc-700 bg-zinc-800 text-white"
+              : "border-transparent text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
           }`}
+          aria-pressed={props.currentView === "leaderboard"}
         >
+          <span
+            className={`h-2.5 w-2.5 rounded-full border transition ${
+              props.currentView === "leaderboard" ? "border-white bg-white" : "border-zinc-500 bg-transparent"
+            }`}
+          />
           Scores
         </button>
       </nav>

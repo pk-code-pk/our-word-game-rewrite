@@ -133,11 +133,11 @@ export function GameLobby({
               <p className="mt-1 font-mono text-xl font-black tracking-[0.25em] text-emerald-900">{secretWord}</p>
             </div>
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Active games</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Live now</p>
               <p className="mt-1 text-2xl font-black text-zinc-900">{activeGamesCount}</p>
             </div>
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">Open lobbies</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-700">Open rooms</p>
               <p className="mt-1 text-2xl font-black text-amber-900">{waitingPublicCount}</p>
             </div>
           </div>
@@ -165,20 +165,45 @@ export function GameLobby({
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Create */}
             <div className="rounded-lg border border-zinc-200 p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-zinc-900">Create game</h3>
-                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">Host</span>
+              <h3 className="font-semibold text-zinc-900">Create game</h3>
+              <div className="mt-3 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1">
+                <button
+                  type="button"
+                  onClick={() => onIsPublicChange(false)}
+                  className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    !isPublic
+                      ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                      : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                  }`}
+                  aria-pressed={!isPublic}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full border ${
+                      !isPublic ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  Private
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onIsPublicChange(true)}
+                  className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    isPublic
+                      ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                      : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                  }`}
+                  aria-pressed={isPublic}
+                >
+                  <span
+                    className={`h-2.5 w-2.5 rounded-full border ${
+                      isPublic ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
+                    }`}
+                    aria-hidden="true"
+                  />
+                  Public
+                </button>
               </div>
-              <label className="mt-3 flex items-start gap-2.5 cursor-pointer">
-                <input
-                  id="public-game-toggle"
-                  type="checkbox"
-                  checked={isPublic}
-                  onChange={(e) => onIsPublicChange(e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500"
-                />
-                <span className="text-sm text-zinc-600">Make lobby public</span>
-              </label>
               <button
                 type="button"
                 onClick={handleCreateGame}
@@ -194,10 +219,7 @@ export function GameLobby({
 
             {/* Join */}
             <div className="rounded-lg border border-zinc-200 p-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold text-zinc-900">Join with code</h3>
-                <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-semibold text-zinc-500">Join</span>
-              </div>
+              <h3 className="font-semibold text-zinc-900">Join with code</h3>
               <div className="mt-3">
                 <input
                   type="text"
