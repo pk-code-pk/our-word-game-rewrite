@@ -71,6 +71,10 @@ function respondWithRouteError(res: express.Response, error: unknown, fallbackMe
   res.status(status).json({ error: message });
 }
 
+function isStaleGuestSessionError(error: unknown) {
+  return error instanceof Error && error.message === "This guest session can no longer be upgraded.";
+}
+
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
@@ -126,16 +130,22 @@ export function createApp() {
       }
 
       if (currentUser?.isAnonymous) {
-        await upgradeAnonymousAccount(currentUser.id, req.body.email ?? "", req.body.password ?? "");
-        await createSession(res, currentUser.id, { replaceExistingSessionId: currentSessionId });
-        res.json({ ok: true, user: await getUserById(currentUser.id) });
-        return;
-      } else {
-        const userId = await signUp(req.body.email ?? "", req.body.password ?? "");
-        await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
-        res.json({ ok: true, user: await getUserById(userId) });
-        return;
+        try {
+          await upgradeAnonymousAccount(currentUser.id, req.body.email ?? "", req.body.password ?? "");
+          await createSession(res, currentUser.id, { replaceExistingSessionId: currentSessionId });
+          res.json({ ok: true, user: await getUserById(currentUser.id) });
+          return;
+        } catch (error) {
+          if (!isStaleGuestSessionError(error)) {
+            throw error;
+          }
+        }
       }
+
+      const userId = await signUp(req.body.email ?? "", req.body.password ?? "");
+      await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
+      res.json({ ok: true, user: await getUserById(userId) });
+      return;
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not sign up." });
     }
