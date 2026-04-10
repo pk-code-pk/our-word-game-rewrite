@@ -629,9 +629,10 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
     const { lowUserId, highUserId } = sortPair(user.id, target.id);
     const inserted = await db
       .prepare(
-        `INSERT OR IGNORE INTO friend_requests (
+      `INSERT INTO friend_requests (
           id, sender_user_id, receiver_user_id, pair_low_user_id, pair_high_user_id, status, created_at
-        ) VALUES (?, ?, ?, ?, ?, 'pending', ?)`
+        ) VALUES (?, ?, ?, ?, ?, 'pending', ?)
+        ON CONFLICT(pair_low_user_id, pair_high_user_id) WHERE status = 'pending' DO NOTHING`
       )
       .run(requestId, user.id, target.id, lowUserId, highUserId, createdAt);
 
@@ -840,9 +841,10 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
     const inviteId = uuid();
     const inserted = await db
       .prepare(
-        `INSERT OR IGNORE INTO game_invites (
+      `INSERT INTO game_invites (
           id, game_id, sender_user_id, receiver_user_id, status, created_at
-        ) VALUES (?, ?, ?, ?, 'pending', ?)`
+        ) VALUES (?, ?, ?, ?, 'pending', ?)
+        ON CONFLICT(game_id, receiver_user_id) WHERE status = 'pending' DO NOTHING`
       )
       .run(inviteId, game.id, user.id, receiver.id, now());
 

@@ -328,7 +328,7 @@ export function cleanupExpiredWaitingGames(): any {
       for (const game of expiredGames) {
         await tx.prepare(`DELETE FROM games WHERE id = ?`).run(game.id);
       }
-    });
+    })();
 
     return expiredGames.length;
   })();
@@ -443,7 +443,7 @@ export function createGame(
         },
         tx
       );
-    });
+    })();
 
     return { gameId, code };
   })();
@@ -529,7 +529,7 @@ export function joinGame(
         createdAt,
         playerId,
       });
-    });
+    })();
   })();
 }
 
@@ -564,12 +564,17 @@ export function listPublicLobbies(): any {
 
     const lobbies = db
       .prepare(
-        `SELECT games.code, games.created_at, players.username AS host,
+        `SELECT games.code, games.created_at,
+                (
+                  SELECT players.username
+                  FROM players
+                  WHERE players.game_id = games.id
+                  ORDER BY players.created_at ASC
+                  LIMIT 1
+                ) AS host,
                 (SELECT COUNT(*) FROM players p2 WHERE p2.game_id = games.id) AS players
          FROM games
-         LEFT JOIN players ON players.game_id = games.id
          WHERE games.public = 1 AND games.status = 'waiting'
-         GROUP BY games.id
          ORDER BY games.created_at DESC
          LIMIT ?`
       )
@@ -587,12 +592,17 @@ export function listPublicLobbies(): any {
 
     const lobbies = (await db
       .prepare(
-        `SELECT games.code, games.created_at, players.username AS host,
+        `SELECT games.code, games.created_at,
+                (
+                  SELECT players.username
+                  FROM players
+                  WHERE players.game_id = games.id
+                  ORDER BY players.created_at ASC
+                  LIMIT 1
+                ) AS host,
                 (SELECT COUNT(*) FROM players p2 WHERE p2.game_id = games.id) AS players
          FROM games
-         LEFT JOIN players ON players.game_id = games.id
          WHERE games.public = 1 AND games.status = 'waiting'
-         GROUP BY games.id
          ORDER BY games.created_at DESC
          LIMIT ?`
       )
@@ -1298,7 +1308,7 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       } else {
         await tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
       }
-    });
+    })();
 
     return {
       matchCount,

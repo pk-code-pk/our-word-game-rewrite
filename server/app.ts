@@ -192,7 +192,7 @@ export function createApp() {
       const user = await requireUser(req);
       res.json({ games: await getPlayerGames(user) });
     } catch (error) {
-      res.status(401).json({ error: error instanceof Error ? error.message : "Unauthorized." });
+      respondWithRouteError(res, error, "Could not list games.");
     }
   });
 
@@ -219,7 +219,7 @@ export function createApp() {
       const user = await requireUser(req);
       res.json({ gameState: await getGameState(user, req.params.gameId) });
     } catch (error) {
-      res.status(401).json({ error: error instanceof Error ? error.message : "Unauthorized." });
+      respondWithRouteError(res, error, "Could not load game state.");
     }
   });
 
@@ -257,7 +257,7 @@ export function createApp() {
       const user = await requireUser(req);
       res.json({ messages: await listChatMessages(user, req.params.gameId) });
     } catch (error) {
-      res.status(401).json({ error: error instanceof Error ? error.message : "Unauthorized." });
+      respondWithRouteError(res, error, "Could not load chat messages.");
     }
   });
 
