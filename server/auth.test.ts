@@ -3,17 +3,7 @@ import type { Request, Response } from "express";
 import { once } from "node:events";
 import { createApp } from "./app.js";
 import { db, initDb } from "./db.js";
-import {
-  resetAuthThrottleState,
-  clearSession,
-  createSession,
-  getSessionCookieName,
-  getUserFromRequest,
-  signIn,
-  signInAnonymously,
-  signUp,
-  upgradeAnonymousAccount,
-} from "./auth.js";
+import { clearSession, createSession, getSessionCookieName, getUserFromRequest, signIn, signInAnonymously, signUp, upgradeAnonymousAccount } from "./auth.js";
 import { createGame, getPlayerGames } from "./gameService.js";
 import { listSocialOverview } from "./friends.js";
 import { v4 as uuid } from "uuid";
@@ -58,11 +48,9 @@ async function withAppServer<T>(run: (baseUrl: string) => Promise<T>) {
 describe("auth", () => {
   beforeEach(() => {
     initDb();
-    resetAuthThrottleState();
     db.exec(`
       PRAGMA foreign_keys = OFF;
       DELETE FROM sessions;
-      DELETE FROM auth_route_throttle;
       DELETE FROM game_invites;
       DELETE FROM friendships;
       DELETE FROM friend_requests;
