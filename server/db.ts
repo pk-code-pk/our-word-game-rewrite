@@ -155,7 +155,7 @@ function createRemoteStatementFromSql(sqlClient: RemoteClient, sql: string): Sta
   const translatedSql = translateQueryForPostgres(sql);
 
   async function runQuery(args: unknown[]) {
-    return sqlClient.unsafe(translatedSql, args);
+    return sqlClient.unsafe(translatedSql, args, { prepare: false });
   }
 
   return {
@@ -374,15 +374,15 @@ async function findAvailableUsernameRemote(
             options?.excludeUserId
               ? client.unsafe(
                   translateQueryForPostgres(`SELECT id FROM users
-                   WHERE LOWER(username) = LOWER(?)
-                     AND id != ?
+                   WHERE LOWER(username) = LOWER(CAST(? AS TEXT))
+                     AND id != CAST(? AS TEXT)
                    LIMIT 1`),
                   [candidate, options.excludeUserId],
                   { prepare: false }
                 )
               : client.unsafe(
                   translateQueryForPostgres(`SELECT id FROM users
-                   WHERE LOWER(username) = LOWER(?)
+                   WHERE LOWER(username) = LOWER(CAST(? AS TEXT))
                    LIMIT 1`),
                   [candidate],
                   { prepare: false }

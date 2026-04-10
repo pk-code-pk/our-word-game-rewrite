@@ -98,9 +98,9 @@ function findUserForSignIn(identifier: string): MaybePromise<{ id: string; passw
 function assertEmailAvailable(normalizedEmail: string, userIdToIgnore?: string): MaybePromise<void> {
   const existing = (userIdToIgnore
     ? db
-        .prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?`)
+        .prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(CAST(? AS TEXT)) AND id != CAST(? AS TEXT)`)
         .get(normalizedEmail, userIdToIgnore)
-    : db.prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(?)`).get(normalizedEmail)) as MaybePromise<
+    : db.prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(CAST(? AS TEXT))`).get(normalizedEmail)) as MaybePromise<
     { id: string } | undefined
   >;
 
