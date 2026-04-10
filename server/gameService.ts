@@ -204,16 +204,24 @@ export type JoinWaitingGameParams = {
 
 export function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinWaitingGameParams) {
   const runJoin = async () => {
-    if (isWaitingGameExpired({ status: params.game.status, createdAt: params.game.created_at })) {
+    const game = ((await runner
+      .prepare(
+        `SELECT id, status, created_at
+         FROM games
+         WHERE id = ?`
+      )
+      .get(params.game.id)) as WaitingGameRow | undefined) ?? params.game;
+
+    if (isWaitingGameExpired({ status: game.status, createdAt: game.created_at })) {
       throw new Error("Game not found.");
     }
-    if (params.game.status !== "waiting") {
+    if (game.status !== "waiting") {
       throw new Error("Game already started or completed.");
     }
 
     const existingPlayers = (await runner
       .prepare(`SELECT user_id FROM players WHERE game_id = ? ORDER BY created_at ASC`)
-      .all(params.game.id)) as Array<{ user_id: string }>;
+      .all(game.id)) as Array<{ user_id: string }>;
 
     if (existingPlayers.some((player) => player.user_id === params.user.id)) {
       throw new Error("You can't join your own game from the same account.");
@@ -229,7 +237,7 @@ export function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinW
       )
       .run(
         params.playerId,
-        params.game.id,
+        game.id,
         params.user.id,
         params.username,
         encodeSecretWord(params.secretWord),
@@ -240,16 +248,16 @@ export function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinW
     await upsertPlayerPresence(
       {
         playerId: params.playerId,
-        gameId: params.game.id,
+        gameId: game.id,
         userId: params.user.id,
         state: "online",
         at: params.createdAt,
       },
       runner
     );
-    await runner.prepare(`UPDATE games SET status = 'active', last_activity_at = ? WHERE id = ?`).run(params.createdAt, params.game.id);
+    await runner.prepare(`UPDATE games SET status = 'active', last_activity_at = ? WHERE id = ?`).run(params.createdAt, game.id);
 
-    return { gameId: params.game.id };
+    return { gameId: game.id };
   };
 
   if (databaseProvider === "sqlite") {
@@ -320,17 +328,11 @@ export function cleanupExpiredWaitingGames(): any {
   }
 
   return (async () => {
-    const expiredGames = (await db
-      .prepare(`SELECT id FROM games WHERE status = 'waiting' AND created_at < ?`)
-      .all(threshold)) as Array<{ id: string }>;
+    const result = (await db
+      .prepare(`DELETE FROM games WHERE status = 'waiting' AND created_at < ?`)
+      .run(threshold)) as { changes: number };
 
-    await db.transaction(async (tx) => {
-      for (const game of expiredGames) {
-        await tx.prepare(`DELETE FROM games WHERE id = ?`).run(game.id);
-      }
-    })();
-
-    return expiredGames.length;
+    return result.changes ?? 0;
   })();
 }
 
@@ -502,20 +504,18 @@ export function joinGame(
   return (async () => {
     await cleanupExpiredWaitingGames();
 
-    const game = (await db
-      .prepare(`SELECT id, status, created_at FROM games WHERE code = ?`)
-      .get(code)) as WaitingGameRow | undefined;
-    if (!game || isWaitingGameExpired({ status: game.status, createdAt: game.created_at })) {
-      throw new Error("Game not found.");
-    }
-
     const createdAt = now();
     const playerId = uuid();
 
     return db.transaction(async (tx) => {
       const reservedGame = (await tx
-        .prepare(`SELECT id, status, created_at FROM games WHERE id = ?`)
-        .get(game.id)) as WaitingGameRow | undefined;
+        .prepare(
+          `SELECT id, status, created_at
+           FROM games
+           WHERE code = ?
+           FOR UPDATE`
+        )
+        .get(code)) as WaitingGameRow | undefined;
 
       if (!reservedGame || isWaitingGameExpired({ status: reservedGame.status, createdAt: reservedGame.created_at })) {
         throw new Error("Game not found.");
@@ -592,16 +592,25 @@ export function listPublicLobbies(): any {
 
     const lobbies = (await db
       .prepare(
-        `SELECT games.code, games.created_at,
-                (
-                  SELECT players.username
-                  FROM players
-                  WHERE players.game_id = games.id
-                  ORDER BY players.created_at ASC
-                  LIMIT 1
-                ) AS host,
-                (SELECT COUNT(*) FROM players p2 WHERE p2.game_id = games.id) AS players
+        `WITH lobby_hosts AS (
+           SELECT DISTINCT ON (players.game_id)
+             players.game_id,
+             players.username
+           FROM players
+           ORDER BY players.game_id, players.created_at ASC
+         ),
+         lobby_counts AS (
+           SELECT players.game_id, COUNT(*)::int AS players
+           FROM players
+           GROUP BY players.game_id
+         )
+         SELECT games.code,
+                games.created_at,
+                lobby_hosts.username AS host,
+                COALESCE(lobby_counts.players, 0)::int AS players
          FROM games
+         LEFT JOIN lobby_hosts ON lobby_hosts.game_id = games.id
+         LEFT JOIN lobby_counts ON lobby_counts.game_id = games.id
          WHERE games.public = 1 AND games.status = 'waiting'
          ORDER BY games.created_at DESC
          LIMIT ?`

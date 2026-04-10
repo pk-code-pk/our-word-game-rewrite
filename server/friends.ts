@@ -121,7 +121,11 @@ function mapUserSummary(row: UserRow): SocialUserSummary {
 }
 
 async function getUserById(userId: string) {
-  return (await db
+  return getUserByIdFrom(db, userId);
+}
+
+async function getUserByIdFrom(runner: DbRunner, userId: string) {
+  return (await runner
     .prepare(
       `SELECT users.id, users.email, users.username, users.is_anonymous, users.created_at
        FROM users
@@ -131,23 +135,31 @@ async function getUserById(userId: string) {
 }
 
 async function getUserByUsername(username: string) {
-  return (await db
+  return getUserByUsernameFrom(db, username);
+}
+
+async function getUserByUsernameFrom(runner: DbRunner, username: string) {
+  return (await runner
     .prepare(`SELECT id, email, username, is_anonymous, created_at FROM users WHERE LOWER(username) = LOWER(?)`)
     .get(username.trim())) as UserRow | undefined;
 }
 
 async function getUserByIdentifier(identifier: string) {
+  return getUserByIdentifierFrom(db, identifier);
+}
+
+async function getUserByIdentifierFrom(runner: DbRunner, identifier: string) {
   const trimmed = identifier.trim();
   if (!trimmed) {
     throw new Error("Choose a player to add.");
   }
 
-  const byId = await getUserById(trimmed);
+  const byId = await getUserByIdFrom(runner, trimmed);
   if (byId) {
     return byId;
   }
 
-  const byUsername = await getUserByUsername(trimmed);
+  const byUsername = await getUserByUsernameFrom(runner, trimmed);
   if (byUsername) {
     return byUsername;
   }
@@ -156,7 +168,11 @@ async function getUserByIdentifier(identifier: string) {
 }
 
 async function getRegisteredUserByIdentifier(identifier: string) {
-  const user = await getUserByIdentifier(identifier);
+  return getRegisteredUserByIdentifierFrom(db, identifier);
+}
+
+async function getRegisteredUserByIdentifierFrom(runner: DbRunner, identifier: string) {
+  const user = await getUserByIdentifierFrom(runner, identifier);
   if (user.is_anonymous) {
     throw new Error("Anonymous accounts can't use the friend system.");
   }
@@ -164,8 +180,12 @@ async function getRegisteredUserByIdentifier(identifier: string) {
 }
 
 async function getPendingFriendRequestBetween(userId: string, otherUserId: string) {
+  return getPendingFriendRequestBetweenFrom(db, userId, otherUserId);
+}
+
+async function getPendingFriendRequestBetweenFrom(runner: DbRunner, userId: string, otherUserId: string) {
   const { lowUserId, highUserId } = sortPair(userId, otherUserId);
-  return (await db
+  return (await runner
     .prepare(
       `SELECT id, sender_user_id, receiver_user_id
        FROM friend_requests
@@ -209,17 +229,32 @@ async function createFriendshipFromRequest(
   senderUserId: string,
   receiverUserId: string
 ) {
-  const { lowUserId, highUserId } = sortPair(senderUserId, receiverUserId);
-  const existing = await getFriendshipBetween(lowUserId, highUserId);
-  if (existing) {
-    return existing.id;
-  }
+  return createFriendshipFromRequestWithRunner(db, requestId, senderUserId, receiverUserId);
+}
 
+async function createFriendshipFromRequestWithRunner(
+  runner: DbRunner,
+  requestId: string,
+  senderUserId: string,
+  receiverUserId: string
+) {
+  const { lowUserId, highUserId } = sortPair(senderUserId, receiverUserId);
   const friendshipId = uuid();
-  await db.prepare(
-    `INSERT INTO friendships (id, user_one_id, user_two_id, created_at, request_id)
-     VALUES (?, ?, ?, ?, ?)`
-  ).run(friendshipId, lowUserId, highUserId, now(), requestId);
+  const inserted = await runner
+    .prepare(
+      `INSERT INTO friendships (id, user_one_id, user_two_id, created_at, request_id)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(user_one_id, user_two_id) DO NOTHING`
+    )
+    .run(friendshipId, lowUserId, highUserId, now(), requestId);
+
+  if (inserted.changes === 0) {
+    const existing = await getFriendshipBetweenFrom(runner, lowUserId, highUserId);
+    if (existing) {
+      return existing.id;
+    }
+    throw new Error("Unable to create friendship.");
+  }
 
   return friendshipId;
 }
@@ -347,7 +382,11 @@ async function getRelationshipForUser(viewerUserId: string, targetUserId: string
 }
 
 async function getFriendRequestById(requestId: string) {
-  return (await db
+  return getFriendRequestByIdFrom(db, requestId);
+}
+
+async function getFriendRequestByIdFrom(runner: DbRunner, requestId: string) {
+  return (await runner
     .prepare(
       `SELECT friend_requests.id, friend_requests.status, friend_requests.created_at, friend_requests.responded_at,
               sender.id AS sender_id, sender.email AS sender_email, sender.username AS sender_username, sender.is_anonymous AS sender_is_anonymous,
@@ -533,24 +572,24 @@ export async function listSocialOverview(user: AuthUser): Promise<SocialOverview
 export async function sendFriendRequest(user: AuthUser, targetIdentifier: string) {
   assertRegisteredUser(user);
 
-  const sendRequest = db.transaction(async () => {
-    const target = await getRegisteredUserByIdentifier(targetIdentifier);
+  const sendRequest = db.transaction(async (tx) => {
+    const target = await getRegisteredUserByIdentifierFrom(tx, targetIdentifier);
     if (target.id === user.id) {
       throw new Error("You can't send a friend request to yourself.");
     }
 
-    if (await getFriendshipBetween(user.id, target.id)) {
+    if (await getFriendshipBetweenFrom(tx, user.id, target.id)) {
       throw new Error("You're already friends.");
     }
 
-    const existingPending = await getPendingFriendRequestBetween(user.id, target.id);
+    const existingPending = await getPendingFriendRequestBetweenFrom(tx, user.id, target.id);
     if (existingPending) {
       if (existingPending.sender_user_id === user.id) {
         throw new Error("Friend request already sent.");
       }
 
       const acceptedAt = now();
-      const updated = await db
+      const updated = await tx
         .prepare(
           `UPDATE friend_requests
            SET status = 'accepted', responded_at = ?, acted_by_user_id = ?
@@ -562,7 +601,12 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
         throw new Error("Friend request not found.");
       }
 
-      await createFriendshipFromRequest(existingPending.id, existingPending.sender_user_id, existingPending.receiver_user_id);
+      await createFriendshipFromRequestWithRunner(
+        tx,
+        existingPending.id,
+        existingPending.sender_user_id,
+        existingPending.receiver_user_id
+      );
 
       return {
         requestId: existingPending.id,
@@ -574,7 +618,7 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
     const requestId = uuid();
     const createdAt = now();
     const { lowUserId, highUserId } = sortPair(user.id, target.id);
-    const inserted = await db
+    const inserted = await tx
       .prepare(
       `INSERT INTO friend_requests (
           id, sender_user_id, receiver_user_id, pair_low_user_id, pair_high_user_id, status, created_at
@@ -584,7 +628,7 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
       .run(requestId, user.id, target.id, lowUserId, highUserId, createdAt);
 
     if (inserted.changes === 0) {
-      const pending = await getPendingFriendRequestBetween(user.id, target.id);
+      const pending = await getPendingFriendRequestBetweenFrom(tx, user.id, target.id);
       if (!pending) {
         throw new Error("Unable to send friend request.");
       }
@@ -593,7 +637,7 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
       }
 
       const acceptedAt = now();
-      const updated = await db
+      const updated = await tx
         .prepare(
           `UPDATE friend_requests
            SET status = 'accepted', responded_at = ?, acted_by_user_id = ?
@@ -605,7 +649,7 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
         throw new Error("Friend request not found.");
       }
 
-      await createFriendshipFromRequest(pending.id, pending.sender_user_id, pending.receiver_user_id);
+      await createFriendshipFromRequestWithRunner(tx, pending.id, pending.sender_user_id, pending.receiver_user_id);
 
       return {
         requestId: pending.id,
@@ -627,8 +671,8 @@ export async function sendFriendRequest(user: AuthUser, targetIdentifier: string
 export async function acceptFriendRequest(user: AuthUser, requestId: string) {
   assertRegisteredUser(user);
 
-  const acceptRequest = db.transaction(async () => {
-    const request = await getFriendRequestById(requestId);
+  const acceptRequest = db.transaction(async (tx) => {
+    const request = await getFriendRequestByIdFrom(tx, requestId);
     if (!request || request.status !== "pending") {
       throw new Error("Friend request not found.");
     }
@@ -636,7 +680,7 @@ export async function acceptFriendRequest(user: AuthUser, requestId: string) {
       throw new Error("You can only accept requests sent to you.");
     }
 
-    const updated = await db.prepare(
+    const updated = await tx.prepare(
       `UPDATE friend_requests
        SET status = 'accepted', responded_at = ?, acted_by_user_id = ?
        WHERE id = ? AND status = 'pending'`
@@ -646,7 +690,7 @@ export async function acceptFriendRequest(user: AuthUser, requestId: string) {
       throw new Error("Friend request not found.");
     }
 
-    await createFriendshipFromRequest(request.id, request.sender_id, request.receiver_id);
+    await createFriendshipFromRequestWithRunner(tx, request.id, request.sender_id, request.receiver_id);
   });
 
   await acceptRequest();
@@ -657,8 +701,8 @@ export async function acceptFriendRequest(user: AuthUser, requestId: string) {
 export async function declineFriendRequest(user: AuthUser, requestId: string) {
   assertRegisteredUser(user);
 
-  const declineRequest = db.transaction(async () => {
-    const request = await getFriendRequestById(requestId);
+  const declineRequest = db.transaction(async (tx) => {
+    const request = await getFriendRequestByIdFrom(tx, requestId);
     if (!request || request.status !== "pending") {
       throw new Error("Friend request not found.");
     }
@@ -666,7 +710,7 @@ export async function declineFriendRequest(user: AuthUser, requestId: string) {
       throw new Error("You can only decline requests sent to you.");
     }
 
-    const updated = await db
+    const updated = await tx
       .prepare(
         `UPDATE friend_requests
          SET status = 'declined', responded_at = ?, acted_by_user_id = ?
@@ -687,8 +731,8 @@ export async function declineFriendRequest(user: AuthUser, requestId: string) {
 export async function cancelFriendRequest(user: AuthUser, requestId: string) {
   assertRegisteredUser(user);
 
-  const cancelRequest = db.transaction(async () => {
-    const request = await getFriendRequestById(requestId);
+  const cancelRequest = db.transaction(async (tx) => {
+    const request = await getFriendRequestByIdFrom(tx, requestId);
     if (!request || request.status !== "pending") {
       throw new Error("Friend request not found.");
     }
@@ -696,7 +740,7 @@ export async function cancelFriendRequest(user: AuthUser, requestId: string) {
       throw new Error("You can only cancel requests you sent.");
     }
 
-    const updated = await db
+    const updated = await tx
       .prepare(
         `UPDATE friend_requests
          SET status = 'canceled', responded_at = ?, acted_by_user_id = ?
@@ -717,27 +761,34 @@ export async function cancelFriendRequest(user: AuthUser, requestId: string) {
 export async function removeFriend(user: AuthUser, friendUserId: string) {
   assertRegisteredUser(user);
 
-  const friend = await getRegisteredUserByIdentifier(friendUserId);
-  if (friend.id === user.id) {
-    throw new Error("You can't remove yourself.");
-  }
+  const removeRelationship = db.transaction(async (tx) => {
+    const friend = await getRegisteredUserByIdentifierFrom(tx, friendUserId);
+    if (friend.id === user.id) {
+      throw new Error("You can't remove yourself.");
+    }
 
-  const { lowUserId, highUserId } = sortPair(user.id, friend.id);
-  const friendship = await getFriendshipBetween(lowUserId, highUserId);
-  if (!friendship) {
-    throw new Error("Friend not found.");
-  }
+    const { lowUserId, highUserId } = sortPair(user.id, friend.id);
+    const friendship = await getFriendshipBetweenFrom(tx, lowUserId, highUserId);
+    if (!friendship) {
+      throw new Error("Friend not found.");
+    }
 
-  const removeRelationship = db.transaction(async () => {
-    await db.prepare(`DELETE FROM friendships WHERE id = ?`).run(friendship.id);
-    await db.prepare(
-      `DELETE FROM game_invites
-       WHERE status = 'pending'
-         AND (
-           (sender_user_id = ? AND receiver_user_id = ?)
-           OR (sender_user_id = ? AND receiver_user_id = ?)
-         )`
-    ).run(user.id, friend.id, friend.id, user.id);
+    const removed = await tx.prepare(`DELETE FROM friendships WHERE id = ?`).run(friendship.id);
+    if (removed.changes === 0) {
+      throw new Error("Friend not found.");
+    }
+
+    await tx
+      .prepare(
+        `UPDATE game_invites
+         SET status = 'canceled', responded_at = ?
+         WHERE status = 'pending'
+           AND (
+             (sender_user_id = ? AND receiver_user_id = ?)
+             OR (sender_user_id = ? AND receiver_user_id = ?)
+           )`
+      )
+      .run(now(), user.id, friend.id, friend.id, user.id);
   });
 
   await removeRelationship();
@@ -754,14 +805,14 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
     throw new Error("Choose a waiting game to invite a friend to.");
   }
 
-  const receiver = await getRegisteredUserByIdentifier(receiverUserId);
-  if (receiver.id === user.id) {
-    throw new Error("You can't invite yourself.");
-  }
-
-  await ensureUsersAreFriends(user.id, receiver.id);
-
   const createInvite = db.transaction(async (tx) => {
+    const receiver = await getRegisteredUserByIdentifierFrom(tx, receiverUserId);
+    if (receiver.id === user.id) {
+      throw new Error("You can't invite yourself.");
+    }
+
+    await ensureUsersAreFriendsFrom(tx, user.id, receiver.id);
+
     const game = (await tx
       .prepare(
         `SELECT games.id, games.code, games.status
