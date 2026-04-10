@@ -63,6 +63,17 @@ type LegacyGameStateResponse = {
           me?: PresenceState;
           opponent?: PresenceState | null;
         };
+        opponentPresentLetterCount?: number | null;
+        opponentGuesses?: Array<{
+          id: string;
+          playerId: string;
+          type: "fourLetter" | "fullWord";
+          text: string;
+          matchCount: number;
+          isCorrect: boolean;
+          guessNumber: number;
+          createdAt: number;
+        }>;
         me?: {
           id: string;
           username: string;
@@ -145,7 +156,10 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
       },
       opponent,
       myGuesses: gameState.myGuesses ?? [],
-      opponentGuesses: gameState.opponentGuesses ?? [],
+      opponentPresentLetterCount:
+        opponent && typeof gameState.opponentPresentLetterCount === "number"
+          ? gameState.opponentPresentLetterCount
+          : null,
       canChat: gameState.canChat ?? Boolean(opponent && gameState.game.status === "active"),
       presence: {
         me: gameState.presence?.me ?? "offline",

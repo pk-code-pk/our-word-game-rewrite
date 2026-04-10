@@ -86,6 +86,17 @@ export function getNextAlphabetState(state: AlphabetState): AlphabetState {
   return "unknown";
 }
 
+export function countAlphabetLettersWithState(
+  alphabet: Record<string, AlphabetState> | undefined,
+  targetState: AlphabetState
+) {
+  if (!alphabet) {
+    return 0;
+  }
+
+  return Object.values(alphabet).filter((state) => state === targetState).length;
+}
+
 export function calculateMatchCount(guess: string, secret: string): number {
   const guessLetters = new Set(guess.toLowerCase());
   const secretLetters = new Set(secret.toLowerCase());
@@ -254,6 +265,7 @@ export function buildGameStateView<
           secretWord: shouldRevealWords ? opponent.secretWord : undefined,
         }
       : null,
+    opponentPresentLetterCount: opponent ? countAlphabetLettersWithState(opponent.alphabet, "present") : null,
     myGuesses: guesses
       .filter((guess) => guess.playerId === me._id)
       .sort((a, b) => a.guessNumber - b.guessNumber),

@@ -168,6 +168,26 @@ describe("game service", () => {
     expect(alphaViewAfterExplicitOffline?.presence.opponent).toBe("offline");
   });
 
+  it("returns the opponent's current green alphabet count in game state", () => {
+    const alpha = makeUser("user-alpha", "alpha@example.com");
+    const bravo = makeUser("user-bravo", "bravo@example.com");
+    seedUser(alpha);
+    seedUser(bravo);
+
+    const created = createGame(alpha, "Alpha", "CRANE", true);
+    joinGame(bravo, created.code, "Bravo", "LIGHT");
+
+    updateAlphabet(bravo, created.gameId, "L", "present");
+    updateAlphabet(bravo, created.gameId, "I", "present");
+    updateAlphabet(bravo, created.gameId, "G", "absent");
+
+    const alphaState = getGameState(alpha, created.gameId);
+    const bravoState = getGameState(bravo, created.gameId);
+
+    expect(alphaState?.opponentPresentLetterCount).toBe(2);
+    expect(bravoState?.opponentPresentLetterCount).toBe(0);
+  });
+
   it("rate limits rapid guess spam while allowing normal pacing", () => {
     const alpha = makeUser("user-alpha", "alpha@example.com");
     const bravo = makeUser("user-bravo", "bravo@example.com");

@@ -42,6 +42,11 @@ describe("game helpers", () => {
   });
 
   it("redacts secret words until the game is complete", () => {
+    const opponentAlphabet = createEmptyAlphabet();
+    opponentAlphabet.C = "present";
+    opponentAlphabet.R = "present";
+    opponentAlphabet.A = "absent";
+
     const baseGame = {
       _id: "game_1" as const,
       code: "ABC123",
@@ -65,7 +70,7 @@ describe("game helpers", () => {
         userId: "user_you" as const,
         username: "You",
         secretWord: "LIGHT",
-        alphabet: createEmptyAlphabet(),
+        alphabet: opponentAlphabet,
         totalGuesses: 2,
       },
     ];
@@ -89,6 +94,7 @@ describe("game helpers", () => {
     });
     expect(activeView?.me.secretWord).toBeUndefined();
     expect(activeView?.opponent?.secretWord).toBeUndefined();
+    expect(activeView?.opponentPresentLetterCount).toBe(2);
 
     const completeView = buildGameStateView({
       game: { ...baseGame, status: "completed", winnerId: "player_me" },
@@ -98,6 +104,7 @@ describe("game helpers", () => {
     });
     expect(completeView?.me.secretWord).toBe("CRANE");
     expect(completeView?.opponent?.secretWord).toBe("LIGHT");
+    expect(completeView?.opponentPresentLetterCount).toBe(2);
   });
 
   it("sanitizes and moderates chat", () => {

@@ -38,6 +38,7 @@ describe("normalizeGameStateResponse", () => {
       opponent: "offline",
     });
     expect(payload.gameState?.canChat).toBe(true);
+    expect(payload.gameState?.opponentPresentLetterCount).toBeNull();
   });
 
   it("keeps opponent presence null when there is no opponent yet", () => {
@@ -68,6 +69,7 @@ describe("normalizeGameStateResponse", () => {
     });
     expect(payload.gameState?.canChat).toBe(false);
     expect(payload.gameState?.me.alphabet).toEqual({});
+    expect(payload.gameState?.opponentPresentLetterCount).toBeNull();
   });
 });
 

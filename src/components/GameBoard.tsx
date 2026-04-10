@@ -25,15 +25,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const guessFormRef = useRef<HTMLFormElement | null>(null);
   const guessInputRef = useRef<HTMLInputElement | null>(null);
   const myGuessesRef = useRef<HTMLDivElement | null>(null);
-  const opponentGuessesRef = useRef<HTMLDivElement | null>(null);
   const keepMyGuessesPinnedRef = useRef(true);
-  const keepOpponentGuessesPinnedRef = useRef(true);
   const latestGameStatusRef = useRef(gameState?.game.status);
 
   const currentPlayer = gameState?.me;
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
-  const opponentGuesses = gameState?.opponentGuesses ?? [];
+  const opponentPresentLetterCount = gameState?.opponentPresentLetterCount ?? null;
 
   useEffect(() => {
     latestGameStatusRef.current = gameState?.game.status;
@@ -77,16 +75,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       scrollGuessPaneToBottom(myGuessesRef.current);
     }
   }, [gameState?.game.status, myGuesses.length]);
-
-  useLayoutEffect(() => {
-    if (gameState?.game.status !== "active") {
-      return;
-    }
-
-    if (shouldPinGuessPane(opponentGuesses.length, keepOpponentGuessesPinnedRef.current)) {
-      scrollGuessPaneToBottom(opponentGuessesRef.current);
-    }
-  }, [gameState?.game.status, opponentGuesses.length]);
 
   useEffect(() => {
     if (!currentPlayer) {
@@ -353,23 +341,47 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
             <section className="space-y-3">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s guesses</h3>
+                  <h3 className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s green letters</h3>
                   <p className="mt-1 text-xs leading-5 text-zinc-500">
-                    Opponent feedback sits at the top and keeps its own scroll position.
+                    This updates from their alphabet board and shows how many letters they currently marked green.
                   </p>
                 </div>
               </div>
-              <GuessColumn
-                title={`${opponent.username}'s guesses (${opponentGuesses.length})`}
-                color="orange"
-                elementId="opponent-guesses"
-                guesses={opponentGuesses}
-                emptyText="No guesses yet"
-                scrollRef={opponentGuessesRef}
-                onScroll={() => {
-                  keepOpponentGuessesPinnedRef.current = isNearBottom(opponentGuessesRef.current);
-                }}
-              />
+              <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white p-5 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-700">{opponent.username}&apos;s current total</p>
+                    <p className="mt-1 text-xs leading-5 text-zinc-500">
+                      Counted from the letters they have marked green right now.
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                    Live board signal
+                  </span>
+                </div>
+                <div className="mt-5 flex items-end justify-between gap-4 rounded-xl bg-emerald-50 px-4 py-5">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-emerald-700">Green letters</p>
+                    <p className="mt-1 text-xs leading-5 text-emerald-900/80">
+                      {opponentPresentLetterCount === null
+                        ? "Temporarily unavailable while the board catches up."
+                        : "Their self-marked alphabet count."}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-mono text-4xl font-black tracking-tight text-emerald-700">
+                      {opponentPresentLetterCount ?? "—"}
+                    </div>
+                    <div className="mt-1 text-xs font-medium text-emerald-800/80">
+                      {opponentPresentLetterCount === null
+                        ? "waiting on board state"
+                        : opponentPresentLetterCount === 1
+                        ? "letter marked"
+                        : "letters marked"}
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
 
             <section className="space-y-3">
