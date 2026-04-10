@@ -315,16 +315,22 @@ function findAvailableUsername(
     }
 
     const existing = localDb
-      ? (localDb
-          .prepare(
-            `SELECT id FROM users
-             WHERE LOWER(username) = LOWER(?)
-               AND (? IS NULL OR id != ?)
-             LIMIT 1`
-          )
-          .get(candidate, options?.excludeUserId ?? null, options?.excludeUserId ?? null) as
-          | { id: string }
-          | undefined)
+      ? (options?.excludeUserId
+          ? (localDb
+              .prepare(
+                `SELECT id FROM users
+                 WHERE LOWER(username) = LOWER(?)
+                   AND id != ?
+                 LIMIT 1`
+              )
+              .get(candidate, options.excludeUserId) as { id: string } | undefined)
+          : (localDb
+              .prepare(
+                `SELECT id FROM users
+                 WHERE LOWER(username) = LOWER(?)
+                 LIMIT 1`
+              )
+              .get(candidate) as { id: string } | undefined))
       : undefined;
 
     if (!existing) {
@@ -357,14 +363,22 @@ async function findAvailableUsernameRemote(
     const existing = usingRemoteDatabase
       ? await getRemoteDb()
           .then((client) =>
-            client.unsafe(
-              translateQueryForPostgres(`SELECT id FROM users
-               WHERE LOWER(username) = LOWER(?)
-                 AND (?::text IS NULL OR id != ?)
-               LIMIT 1`),
-              [candidate, options?.excludeUserId ?? null, options?.excludeUserId ?? null],
-              { prepare: true }
-            )
+            options?.excludeUserId
+              ? client.unsafe(
+                  translateQueryForPostgres(`SELECT id FROM users
+                   WHERE LOWER(username) = LOWER(?)
+                     AND id != ?
+                   LIMIT 1`),
+                  [candidate, options.excludeUserId],
+                  { prepare: true }
+                )
+              : client.unsafe(
+                  translateQueryForPostgres(`SELECT id FROM users
+                   WHERE LOWER(username) = LOWER(?)
+                   LIMIT 1`),
+                  [candidate],
+                  { prepare: true }
+                )
           )
           .then((result) => normalizeRow<{ id: string }>(result[0]))
       : undefined;
