@@ -37,7 +37,7 @@ export function SignOutButton() {
         }
       }}
       disabled={isSigningOut}
-      title={isAnonymous ? "Guest session" : user?.email ?? user?.username ?? "Saved account"}
+      title={isAnonymous ? "Guest session" : user?.username ?? "Saved account"}
     >
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900">
         {badgeLetter}

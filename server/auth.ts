@@ -4,7 +4,7 @@ import crypto from "node:crypto";
 import { v4 as uuid } from "uuid";
 import { allocateUniqueUsernameRemote, db } from "./db.js";
 import type { AuthUser } from "./types.js";
-import { sanitizeSocialUsername } from "../shared/gameLogic.js";
+import { isValidSocialUsername, sanitizeSocialUsername } from "../shared/gameLogic.js";
 
 const SESSION_COOKIE = "fourfive_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -40,18 +40,23 @@ function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
 
+function normalizeAccountUsername(username: string) {
+  const normalized = sanitizeSocialUsername(username);
+
+  if (!isValidSocialUsername(normalized)) {
+    throw new Error("Username must be 2-20 characters using letters, numbers, hyphens, or underscores.");
+  }
+
+  return normalized;
+}
+
 function normalizeSignInIdentifier(identifier: string) {
   const trimmed = identifier.trim();
   if (!trimmed) {
-    throw new Error("Please enter your email or username.");
+    throw new Error("Please enter your username.");
   }
 
   return trimmed;
-}
-
-function buildUsernameSeed(value: string) {
-  const normalized = sanitizeSocialUsername(value);
-  return normalized.length >= 2 ? normalized : "player";
 }
 
 function assertValidPassword(password: string) {
@@ -64,15 +69,8 @@ function assertValidPassword(password: string) {
   }
 }
 
-function assertValidCredentials(email: string, password: string) {
-  const normalizedEmail = normalizeEmail(email);
-
-  if (!EMAIL_PATTERN.test(normalizedEmail)) {
-    throw new Error("Please enter a valid email address.");
-  }
-
+function assertValidCredentials(password: string) {
   assertValidPassword(password);
-  return normalizedEmail;
 }
 
 function findUserForSignIn(identifier: string): MaybePromise<{ id: string; password_hash: string | null } | undefined> {
@@ -95,29 +93,33 @@ function findUserForSignIn(identifier: string): MaybePromise<{ id: string; passw
     .get(normalizedUsername) as MaybePromise<{ id: string; password_hash: string | null } | undefined>;
 }
 
-function assertEmailAvailable(normalizedEmail: string, userIdToIgnore?: string): MaybePromise<void> {
+function assertUsernameAvailable(normalizedUsername: string, userIdToIgnore?: string): MaybePromise<void> {
   const existing = (userIdToIgnore
     ? db
-        .prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(CAST(? AS TEXT)) AND id != CAST(? AS TEXT)`)
-        .get(normalizedEmail, userIdToIgnore)
-    : db.prepare(`SELECT id FROM users WHERE LOWER(email) = LOWER(CAST(? AS TEXT))`).get(normalizedEmail)) as MaybePromise<
+        .prepare(`SELECT id FROM users WHERE LOWER(username) = LOWER(CAST(? AS TEXT)) AND id != CAST(? AS TEXT)`)
+        .get(normalizedUsername, userIdToIgnore)
+    : db.prepare(`SELECT id FROM users WHERE LOWER(username) = LOWER(CAST(? AS TEXT))`).get(normalizedUsername)) as MaybePromise<
     { id: string } | undefined
   >;
 
   return flatMapMaybePromise(existing, (row) => {
     if (row) {
-      throw new Error("An account with that email already exists.");
+      throw new Error("That username is already taken.");
     }
   });
 }
 
-function isEmailConflictError(error: unknown) {
+function isUsernameConflictError(error: unknown) {
   if (!(error instanceof Error)) {
     return false;
   }
 
   const code = (error as { code?: string }).code;
-  return code === "23505" || error.message.includes("UNIQUE constraint failed: users.email");
+  return (
+    code === "23505" ||
+    error.message.includes("UNIQUE constraint failed: users.username") ||
+    error.message.includes("idx_users_username")
+  );
 }
 
 export function getSessionCookieName() {
@@ -233,37 +235,47 @@ export function requireUser(req: Request): MaybePromise<AuthUser> {
   });
 }
 
-export function signUp(email: string, password: string): MaybePromise<string> {
-  const normalizedEmail = assertValidCredentials(email, password);
+export function signUp(username: string, password: string): MaybePromise<string> {
+  const normalizedUsername = normalizeAccountUsername(username);
+  assertValidCredentials(password);
   const userId = uuid();
   const passwordHash = bcrypt.hashSync(password, 10);
 
-  return flatMapMaybePromise(assertEmailAvailable(normalizedEmail), () =>
-    flatMapMaybePromise(
-      allocateUniqueUsernameRemote(buildUsernameSeed(normalizedEmail.split("@")[0] ?? "player")),
-      (username) => {
-        try {
-          return flatMapMaybePromise(
-            db
-              .prepare(
-                `INSERT INTO users (id, email, username, password_hash, is_anonymous, created_at) VALUES (?, ?, ?, ?, 0, ?)`
-              )
-              .run(userId, normalizedEmail, username, passwordHash, now()),
-            () => userId
-          );
-        } catch (error) {
-          if (isEmailConflictError(error)) {
-            throw new Error("An account with that email already exists.");
+  return flatMapMaybePromise(assertUsernameAvailable(normalizedUsername), () => {
+    let result: MaybePromise<unknown>;
+
+    try {
+      result = db
+        .prepare(
+          `INSERT INTO users (id, email, username, password_hash, is_anonymous, created_at) VALUES (?, NULL, ?, ?, 0, ?)`
+        )
+        .run(userId, normalizedUsername, passwordHash, now());
+    } catch (error) {
+      if (isUsernameConflictError(error)) {
+        throw new Error("That username is already taken.");
+      }
+      throw error;
+    }
+
+    if (isPromiseLike(result)) {
+      return result.then(
+        () => userId,
+        (error) => {
+          if (isUsernameConflictError(error)) {
+            throw new Error("That username is already taken.");
           }
           throw error;
         }
-      }
-    )
-  );
+      );
+    }
+
+    return userId;
+  });
 }
 
-export function upgradeAnonymousAccount(userId: string, email: string, password: string): MaybePromise<void> {
-  const normalizedEmail = assertValidCredentials(email, password);
+export function upgradeAnonymousAccount(userId: string, username: string, password: string): MaybePromise<void> {
+  const normalizedUsername = normalizeAccountUsername(username);
+  assertValidCredentials(password);
   const passwordHash = bcrypt.hashSync(password, 10);
   const user = db
     .prepare(`SELECT id, is_anonymous FROM users WHERE id = ?`)
@@ -274,37 +286,33 @@ export function upgradeAnonymousAccount(userId: string, email: string, password:
       throw new Error("This guest session can no longer be upgraded.");
     }
 
-    return flatMapMaybePromise(assertEmailAvailable(normalizedEmail, userId), () => {
-      const existing = db
-        .prepare(`SELECT username FROM users WHERE id = ?`)
-        .get(userId) as MaybePromise<{ username: string | null } | undefined>;
+    return flatMapMaybePromise(assertUsernameAvailable(normalizedUsername, userId), () => {
+      let result: MaybePromise<unknown>;
 
-      return flatMapMaybePromise(existing, (existingUser) => {
-        const usernameSeed = existingUser?.username?.trim()
-          ? existingUser.username
-          : buildUsernameSeed(normalizedEmail.split("@")[0] ?? "player");
+      try {
+        result = db
+          .prepare(`UPDATE users SET email = NULL, username = ?, password_hash = ?, is_anonymous = 0 WHERE id = ?`)
+          .run(normalizedUsername, passwordHash, userId);
+      } catch (error) {
+        if (isUsernameConflictError(error)) {
+          throw new Error("That username is already taken.");
+        }
+        throw error;
+      }
 
-        return flatMapMaybePromise(
-          allocateUniqueUsernameRemote(usernameSeed, {
-            excludeUserId: userId,
-          }),
-          (username) => {
-            try {
-              return flatMapMaybePromise(
-                db
-                  .prepare(`UPDATE users SET email = ?, username = ?, password_hash = ?, is_anonymous = 0 WHERE id = ?`)
-                  .run(normalizedEmail, username, passwordHash, userId),
-                () => undefined
-              );
-            } catch (error) {
-              if (isEmailConflictError(error)) {
-                throw new Error("An account with that email already exists.");
-              }
-              throw error;
+      if (isPromiseLike(result)) {
+        return result.then(
+          () => undefined,
+          (error) => {
+            if (isUsernameConflictError(error)) {
+              throw new Error("That username is already taken.");
             }
+            throw error;
           }
         );
-      });
+      }
+
+      return undefined;
     });
   });
 }
@@ -313,12 +321,12 @@ export function signIn(identifier: string, password: string): MaybePromise<strin
   assertValidPassword(password);
   return flatMapMaybePromise(findUserForSignIn(identifier), (user) => {
     if (!user?.password_hash) {
-      throw new Error("Invalid email, username, or password.");
+      throw new Error("Invalid username or password.");
     }
 
     const valid = bcrypt.compareSync(password, user.password_hash);
     if (!valid) {
-      throw new Error("Invalid email, username, or password.");
+      throw new Error("Invalid username or password.");
     }
 
     return user.id;

@@ -171,15 +171,15 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
 
 export const api = {
   me: () => request<{ user: AuthUser | null }>("/api/auth/me"),
-  signUp: (email: string, password: string) =>
+  signUp: (username: string, password: string) =>
     request<{ ok: true; user: AuthUser | null }>("/api/auth/signup", {
       method: "POST",
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ username, password }),
     }),
   signIn: (identifier: string, password: string) =>
     request<{ ok: true; user: AuthUser | null }>("/api/auth/signin", {
       method: "POST",
-      body: JSON.stringify({ identifier, email: identifier, username: identifier, password }),
+      body: JSON.stringify({ identifier, username: identifier, password }),
     }),
   signInAnonymous: () =>
     request<{ ok: true; user: AuthUser | null }>("/api/auth/anonymous", {

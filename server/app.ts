@@ -147,7 +147,11 @@ export function createApp() {
 
       if (currentUser?.isAnonymous) {
         try {
-          await upgradeAnonymousAccount(currentUser.id, req.body.email ?? "", req.body.password ?? "");
+          await upgradeAnonymousAccount(
+            currentUser.id,
+            req.body.username ?? req.body.identifier ?? req.body.email ?? "",
+            req.body.password ?? ""
+          );
           await createSession(res, currentUser.id, { replaceExistingSessionId: currentSessionId });
           res.json({ ok: true, user: await getUserById(currentUser.id) });
           return;
@@ -158,7 +162,7 @@ export function createApp() {
         }
       }
 
-      const userId = await signUp(req.body.email ?? "", req.body.password ?? "");
+      const userId = await signUp(req.body.username ?? req.body.identifier ?? req.body.email ?? "", req.body.password ?? "");
       await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
       res.json({ ok: true, user: await getUserById(userId) });
       return;

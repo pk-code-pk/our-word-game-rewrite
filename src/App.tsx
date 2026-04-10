@@ -59,7 +59,7 @@ export default function App() {
           <ScreenErrorBoundary resetKey={`${user?.id ?? "anonymous"}:${currentView}`}>
             {user?.isAnonymous ? (
               <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
-                <strong>Guest session.</strong> Sign in to save your progress and unlock social features.
+                <strong>Guest session.</strong> Create an account to keep your progress and unlock social features.
               </div>
             ) : null}
             {currentView === "game" ? <Content key={user?.id ?? "anonymous"} /> : <Leaderboard />}
@@ -304,7 +304,7 @@ function Content() {
           {user?.isAnonymous ? (
             <div className="space-y-4">
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                Friend requests and direct invites are available on saved accounts. Upgrade this guest session to keep your history and unlock the social hub.
+                Friend requests and direct invites are available on saved accounts. Create an account to keep your history and unlock the social hub.
               </div>
               <div className="mx-auto max-w-xl">
                 <SignInForm mode="upgrade" />

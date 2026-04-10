@@ -10,7 +10,7 @@ type AuthContextValue = {
   errorMessage: string | null;
   refresh: () => Promise<AuthUser | null>;
   signIn: (identifier: string, password: string) => Promise<AuthUser | null>;
-  signUp: (email: string, password: string) => Promise<AuthUser | null>;
+  signUp: (username: string, password: string) => Promise<AuthUser | null>;
   signInAnonymous: () => Promise<AuthUser | null>;
   signOut: () => Promise<void>;
 };
@@ -105,9 +105,9 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
         return response.user;
       },
-      signUp: async (email, password) => {
+      signUp: async (username, password) => {
         const requestId = invalidatePendingRequests();
-        const response = await api.signUp(email, password);
+        const response = await api.signUp(username, password);
         if (isMountedRef.current && requestIdRef.current === requestId) {
           setUser(response.user);
           setErrorMessage(null);

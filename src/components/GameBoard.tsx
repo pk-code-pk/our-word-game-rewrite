@@ -291,7 +291,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
             {user?.isAnonymous && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
-                Friend invites are available on saved accounts. Create an email-backed account to invite friends
+                Friend invites are available on saved accounts. Create an account to invite friends
                 directly into this lobby.
               </div>
             )}

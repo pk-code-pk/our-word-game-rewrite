@@ -3,7 +3,16 @@ import type { Request, Response } from "express";
 import { once } from "node:events";
 import { createApp } from "./app.js";
 import { db, initDb } from "./db.js";
-import { clearSession, createSession, getSessionCookieName, getUserFromRequest, signIn, signInAnonymously, signUp, upgradeAnonymousAccount } from "./auth.js";
+import {
+  clearSession,
+  createSession,
+  getSessionCookieName,
+  getUserFromRequest,
+  signIn,
+  signInAnonymously,
+  signUp,
+  upgradeAnonymousAccount,
+} from "./auth.js";
 import { createGame, getPlayerGames } from "./gameService.js";
 import { listSocialOverview } from "./friends.js";
 import { v4 as uuid } from "uuid";
@@ -66,60 +75,57 @@ describe("auth", () => {
   });
 
   it("rejects empty or malformed signup credentials", async () => {
-    await expect(Promise.resolve().then(() => signUp("", ""))).rejects.toThrow("valid email");
-    await expect(Promise.resolve().then(() => signUp("hello@example.com", "short"))).rejects.toThrow(
-      "at least"
-    );
+    await expect(Promise.resolve().then(() => signUp("", ""))).rejects.toThrow("Username must");
+    await expect(Promise.resolve().then(() => signUp("hello-player", "short"))).rejects.toThrow("at least");
   });
 
   it("creates and validates a password account", async () => {
-    await signUp("hello@example.com", "supersecret");
+    await signUp("hello-player", "supersecret");
 
-    expect(await signIn("hello@example.com", "supersecret")).toBeTypeOf("string");
-    await expect(Promise.resolve().then(() => signIn("hello@example.com", "wrong-pass"))).rejects.toThrow(
-      "Invalid email, username, or password."
+    expect(await signIn("hello-player", "supersecret")).toBeTypeOf("string");
+    await expect(Promise.resolve().then(() => signIn("hello-player", "wrong-pass"))).rejects.toThrow(
+      "Invalid username or password."
     );
   });
 
-  it("allows signing in with the stored username as well as email", async () => {
-    const userId = await signUp("username-login@example.com", "supersecret");
-    const row = db.prepare(`SELECT username FROM users WHERE id = ?`).get(userId) as
-      | { username: string | null }
+  it("signs in with the stored username and keeps email null", async () => {
+    const userId = await signUp("username-login", "supersecret");
+    const row = db.prepare(`SELECT username, email FROM users WHERE id = ?`).get(userId) as
+      | { username: string | null; email: string | null }
       | undefined;
 
-    expect(row?.username).toBeTruthy();
-    expect(await signIn("username-login@example.com", "supersecret")).toBe(userId);
+    expect(row?.username).toBe("username-login");
+    expect(row?.email).toBeNull();
     expect(await signIn(row?.username ?? "", "supersecret")).toBe(userId);
-    await expect(Promise.resolve().then(() => signIn(row?.username ?? "", "wrong-pass"))).rejects.toThrow(
-      "Invalid email, username, or password."
-    );
   });
 
-  it("assigns unique usernames to new accounts and exposes them through sessions", async () => {
-    const firstUserId = await signUp("player@example.com", "supersecret");
-    const secondUserId = await signUp("player@other.com", "supersecret");
+  it("uses the chosen username and exposes it through sessions", async () => {
+    const userId = await signUp("player", "supersecret");
 
-    const firstRow = db.prepare(`SELECT id, username FROM users WHERE id = ?`).get(firstUserId) as
-      | { id: string; username: string }
-      | undefined;
-    const secondRow = db.prepare(`SELECT id, username FROM users WHERE id = ?`).get(secondUserId) as
+    const row = db.prepare(`SELECT id, username FROM users WHERE id = ?`).get(userId) as
       | { id: string; username: string }
       | undefined;
 
-    expect(firstRow?.username).toBe("player");
-    expect(secondRow?.username).toBe("player-2");
+    expect(row?.username).toBe("player");
 
     const response = createMockResponse();
-    await createSession(response, firstUserId);
+    await createSession(response, userId);
     const sessionId = response.cookie.mock.calls[0]?.[1];
     if (typeof sessionId !== "string") {
       throw new Error("Expected session cookie to be created.");
     }
 
     expect(await getUserFromRequest(createMockRequest(sessionId))).toMatchObject({
-      id: firstUserId,
+      id: userId,
       username: "player",
+      email: null,
     });
+  });
+
+  it("rejects creating a second account with the same username", async () => {
+    await signUp("player", "supersecret");
+
+    await expect(Promise.resolve().then(() => signUp("player", "supersecret"))).rejects.toThrow("already taken");
   });
 
   it("upgrades an anonymous guest in place without changing the session", async () => {
@@ -132,7 +138,7 @@ describe("auth", () => {
       throw new Error("Expected session cookie to be created.");
     }
 
-    await upgradeAnonymousAccount(guestId, "guest@example.com", "supersecret");
+    await upgradeAnonymousAccount(guestId, "guest-player", "supersecret");
 
     const updatedSession = db
       .prepare(`SELECT user_id FROM sessions WHERE id = ?`)
@@ -156,14 +162,15 @@ describe("auth", () => {
     expect(updatedSession?.user_id).toBe(guestId);
     expect(upgradedUser).toMatchObject({
       id: guestId,
-      email: "guest@example.com",
-      username: expect.any(String),
+      email: null,
+      username: "guest-player",
       is_anonymous: 0,
     });
     expect(upgradedUser?.password_hash).toEqual(expect.any(String));
     expect(requestUser).toMatchObject({
       id: guestId,
-      email: "guest@example.com",
+      email: null,
+      username: "guest-player",
       isAnonymous: false,
     });
     expect(requestUser?.createdAt).toEqual(expect.any(Number));
@@ -185,13 +192,13 @@ describe("auth", () => {
       throw new Error("Expected guest user to resolve from the session.");
     }
 
-    const friendId = await signUp("friend@example.com", "supersecret");
+    const friendId = await signUp("friend-player", "supersecret");
     const friendGame = await createGame(guestUser, "Guest", "CRANE", false);
     db.prepare(
       `INSERT INTO friendships (id, user_one_id, user_two_id, created_at, request_id) VALUES (?, ?, ?, ?, NULL)`
     ).run(uuid(), guestId, friendId, Date.now());
 
-    await upgradeAnonymousAccount(guestId, "guest-upgrade@example.com", "supersecret");
+    await upgradeAnonymousAccount(guestId, "guest-upgrade", "supersecret");
 
     const upgradedUser = await getUserFromRequest(createMockRequest(sessionId));
     if (!upgradedUser) {
@@ -203,7 +210,8 @@ describe("auth", () => {
 
     expect(upgradedUser).toMatchObject({
       id: guestId,
-      email: "guest-upgrade@example.com",
+      email: null,
+      username: "guest-upgrade",
       isAnonymous: false,
     });
     expect(social.friends).toHaveLength(1);
@@ -211,13 +219,13 @@ describe("auth", () => {
     expect(games.some((game) => game.gameId === friendGame.gameId)).toBe(true);
   });
 
-  it("rejects upgrading a guest to an email that already exists", async () => {
-    await signUp("taken@example.com", "supersecret");
+  it("rejects upgrading a guest to a username that already exists", async () => {
+    await signUp("taken-name", "supersecret");
     const guestId = await signInAnonymously();
 
     await expect(
-      Promise.resolve().then(() => upgradeAnonymousAccount(guestId, "taken@example.com", "supersecret"))
-    ).rejects.toThrow("already exists");
+      Promise.resolve().then(() => upgradeAnonymousAccount(guestId, "taken-name", "supersecret"))
+    ).rejects.toThrow("already taken");
   });
 
   it("rotates the session when upgrading an anonymous guest through the signup route", async () => {
@@ -238,7 +246,7 @@ describe("auth", () => {
           Cookie: `${getSessionCookieName()}=${sessionId}`,
         },
         body: JSON.stringify({
-          email: "routeguest@example.com",
+          username: "route-guest",
           password: "supersecret",
         }),
       });
@@ -251,7 +259,8 @@ describe("auth", () => {
       expect(result.status).toBe(200);
       expect(body.user).toMatchObject({
         id: guestId,
-        email: "routeguest@example.com",
+        email: null,
+        username: "route-guest",
         isAnonymous: false,
       });
     });
@@ -265,8 +274,8 @@ describe("auth", () => {
 
     expect(upgradedUser).toMatchObject({
       id: guestId,
-      email: "routeguest@example.com",
-      username: expect.any(String),
+      email: null,
+      username: "route-guest",
       is_anonymous: 0,
     });
     expect(rotatedSession?.id).toBeTruthy();
@@ -275,14 +284,7 @@ describe("auth", () => {
   });
 
   it("accepts a username on the signin route and creates a live session", async () => {
-    const userId = await signUp("route-signin@example.com", "supersecret");
-    const usernameRow = db.prepare(`SELECT username FROM users WHERE id = ?`).get(userId) as
-      | { username: string | null }
-      | undefined;
-
-    if (!usernameRow?.username) {
-      throw new Error("Expected the test account to have a username.");
-    }
+    const userId = await signUp("route-signin", "supersecret");
 
     await withAppServer(async (baseUrl) => {
       const response = await fetch(`${baseUrl}/api/auth/signin`, {
@@ -291,7 +293,7 @@ describe("auth", () => {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          identifier: usernameRow.username,
+          identifier: "route-signin",
           password: "supersecret",
         }),
       });
@@ -304,15 +306,15 @@ describe("auth", () => {
       expect(response.headers.get("set-cookie")).toContain(getSessionCookieName());
       expect(body.user).toMatchObject({
         id: userId,
-        email: "route-signin@example.com",
-        username: usernameRow.username,
+        email: null,
+        username: "route-signin",
         isAnonymous: false,
       });
     });
   });
 
   it("cleans up expired sessions when resolving the current user", async () => {
-    const userId = await signUp("session@example.com", "supersecret");
+    const userId = await signUp("session-player", "supersecret");
     const response = createMockResponse();
     await createSession(response, userId);
 
@@ -328,7 +330,7 @@ describe("auth", () => {
   });
 
   it("clears the session cookie and deletes the backing session row", async () => {
-    const userId = await signUp("logout@example.com", "supersecret");
+    const userId = await signUp("logout-player", "supersecret");
     const createResponse = createMockResponse();
     await createSession(createResponse, userId);
 

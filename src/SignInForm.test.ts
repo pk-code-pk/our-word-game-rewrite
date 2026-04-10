@@ -2,17 +2,15 @@ import { describe, expect, it } from "vitest";
 import { resolvePreferredAuthIdentifier } from "./SignInForm";
 
 describe("resolvePreferredAuthIdentifier", () => {
-  it("prefers the remembered email when upgrading a guest session", () => {
-    expect(resolvePreferredAuthIdentifier(true, "alice", "alice@example.com")).toBe("alice@example.com");
+  it("keeps the remembered identifier for the standard flow", () => {
+    expect(resolvePreferredAuthIdentifier(false, "alice")).toBe("alice");
   });
 
-  it("keeps the last typed identifier for regular sign-in flows", () => {
-    expect(resolvePreferredAuthIdentifier(false, "alice", "alice@example.com")).toBe("alice");
+  it("starts the guest-upgrade flow with a blank identifier", () => {
+    expect(resolvePreferredAuthIdentifier(true, "guest-player")).toBe("");
   });
 
-  it("falls back to whichever remembered value exists", () => {
-    expect(resolvePreferredAuthIdentifier(true, "", "alice@example.com")).toBe("alice@example.com");
-    expect(resolvePreferredAuthIdentifier(false, "", "alice@example.com")).toBe("alice@example.com");
-    expect(resolvePreferredAuthIdentifier(true, "alice", "")).toBe("alice");
+  it("trims surrounding whitespace", () => {
+    expect(resolvePreferredAuthIdentifier(false, "  alice  ")).toBe("alice");
   });
 });
