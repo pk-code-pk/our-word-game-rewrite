@@ -155,7 +155,7 @@ function createRemoteStatementFromSql(sqlClient: RemoteClient, sql: string): Sta
   const translatedSql = translateQueryForPostgres(sql);
 
   async function runQuery(args: unknown[]) {
-    return sqlClient.unsafe(translatedSql, args, { prepare: true });
+    return sqlClient.unsafe(translatedSql, args);
   }
 
   return {
@@ -378,14 +378,14 @@ async function findAvailableUsernameRemote(
                      AND id != ?
                    LIMIT 1`),
                   [candidate, options.excludeUserId],
-                  { prepare: true }
+                  { prepare: false }
                 )
               : client.unsafe(
                   translateQueryForPostgres(`SELECT id FROM users
                    WHERE LOWER(username) = LOWER(?)
                    LIMIT 1`),
                   [candidate],
-                  { prepare: true }
+                  { prepare: false }
                 )
           )
           .then((result) => normalizeRow<{ id: string }>(result[0]))
@@ -459,7 +459,7 @@ async function backfillUsernamesRemote() {
     reserved.add(username.toLowerCase());
 
     if (row.username?.trim() !== username) {
-      await remoteDb.unsafe(`UPDATE users SET username = $1 WHERE id = $2`, [username, row.id], { prepare: true });
+      await remoteDb.unsafe(`UPDATE users SET username = $1 WHERE id = $2`, [username, row.id], { prepare: false });
     }
   }
 }
