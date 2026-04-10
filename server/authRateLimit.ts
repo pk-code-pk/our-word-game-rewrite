@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { db } from "./db.js";
+import { databaseProvider, db } from "./db.js";
 
 export type AuthThrottleAction = "signup" | "signin" | "anonymous";
 
@@ -52,15 +52,18 @@ const DEFAULT_RULES: Record<AuthThrottleAction, AuthThrottleRule> = {
   },
 };
 
+let authThrottleTableInitPromise: Promise<void> | null = null;
+
 function ensureAuthThrottleTable() {
+  const timestampType = databaseProvider === "postgres" ? "BIGINT" : "INTEGER";
   return db.exec(`
     CREATE TABLE IF NOT EXISTS auth_route_throttle (
       action TEXT NOT NULL,
       ip TEXT NOT NULL,
-      window_started_at INTEGER NOT NULL,
+      window_started_at ${timestampType} NOT NULL,
       attempts INTEGER NOT NULL,
-      blocked_until INTEGER NOT NULL DEFAULT 0,
-      updated_at INTEGER NOT NULL,
+      blocked_until ${timestampType} NOT NULL DEFAULT 0,
+      updated_at ${timestampType} NOT NULL,
       PRIMARY KEY (action, ip)
     );
 
@@ -69,11 +72,21 @@ function ensureAuthThrottleTable() {
   `);
 }
 
-let authThrottleTableInitPromise: Promise<void> | null = null;
+function migrateAuthThrottleTable() {
+  if (databaseProvider !== "postgres") {
+    return Promise.resolve();
+  }
+
+  return db.exec(`
+    ALTER TABLE auth_route_throttle ALTER COLUMN window_started_at TYPE BIGINT USING window_started_at::bigint;
+    ALTER TABLE auth_route_throttle ALTER COLUMN blocked_until TYPE BIGINT USING blocked_until::bigint;
+    ALTER TABLE auth_route_throttle ALTER COLUMN updated_at TYPE BIGINT USING updated_at::bigint;
+  `);
+}
 
 async function ensureAuthThrottleTableAsync() {
   if (!authThrottleTableInitPromise) {
-    authThrottleTableInitPromise = Promise.resolve(ensureAuthThrottleTable());
+    authThrottleTableInitPromise = Promise.resolve(ensureAuthThrottleTable()).then(() => migrateAuthThrottleTable());
   }
 
   await authThrottleTableInitPromise;

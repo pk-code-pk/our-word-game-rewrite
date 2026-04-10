@@ -15,6 +15,7 @@ type PlayerPresenceRow = {
 
 type MaybePromise<T> = T | Promise<T>;
 type DbRunner = Pick<typeof db, "prepare" | "exec">;
+let presenceStoreInitPromise: Promise<void> | null = null;
 
 function now() {
   return Date.now();
@@ -39,15 +40,16 @@ function runPresenceUpsert(runner: DbRunner, params: { playerId: string; gameId:
 }
 
 export function ensurePresenceStore(): MaybePromise<void> {
-  return db.exec(`
+  const timestampType = databaseProvider === "postgres" ? "BIGINT" : "INTEGER";
+  const createSql = `
     CREATE TABLE IF NOT EXISTS player_presence (
       player_id TEXT PRIMARY KEY,
       game_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
       presence_state TEXT NOT NULL,
-      last_seen_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
+      last_seen_at ${timestampType} NOT NULL,
+      created_at ${timestampType} NOT NULL,
+      updated_at ${timestampType} NOT NULL,
       FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
       FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -56,7 +58,24 @@ export function ensurePresenceStore(): MaybePromise<void> {
     CREATE INDEX IF NOT EXISTS idx_player_presence_game_id ON player_presence(game_id);
     CREATE INDEX IF NOT EXISTS idx_player_presence_user_id ON player_presence(user_id);
     CREATE INDEX IF NOT EXISTS idx_player_presence_last_seen_at ON player_presence(last_seen_at);
-  `);
+  `;
+  const migrateSql = `
+    ALTER TABLE player_presence ALTER COLUMN last_seen_at TYPE BIGINT USING last_seen_at::bigint;
+    ALTER TABLE player_presence ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
+    ALTER TABLE player_presence ALTER COLUMN updated_at TYPE BIGINT USING updated_at::bigint;
+  `;
+
+  if (databaseProvider !== "postgres") {
+    return db.exec(createSql);
+  }
+
+  if (!presenceStoreInitPromise) {
+    presenceStoreInitPromise = Promise.resolve(db.exec(createSql)).then(() =>
+      Promise.resolve(db.exec(migrateSql)).then(() => undefined)
+    );
+  }
+
+  return presenceStoreInitPromise;
 }
 
 function normalizePresenceState(state: PresenceState, lastSeenAt: number, nowMs: number): PresenceState {
