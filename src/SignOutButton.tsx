@@ -19,7 +19,7 @@ export function SignOutButton() {
   return (
     <button
       type="button"
-      className="group inline-flex min-h-9 w-auto items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-left transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50"
+      className="group inline-flex min-h-9 max-w-full items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-left transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-50 sm:px-3"
       onClick={async () => {
         if (isSigningOut) {
           return;
@@ -42,8 +42,8 @@ export function SignOutButton() {
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900">
         {badgeLetter}
       </span>
-      <span className="min-w-0 flex-1">
-        <span className="hidden sm:block text-[10px] font-medium uppercase tracking-wide text-zinc-500">Signed in as</span>
+      <span className="hidden min-w-0 flex-1 md:block">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-zinc-500">Signed in as</span>
         <span className="block truncate text-xs font-semibold text-white">{identityLabel}</span>
       </span>
       <span className="rounded-md bg-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200 transition group-hover:bg-zinc-600">

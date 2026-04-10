@@ -29,23 +29,26 @@ function isRecoverableInviteLobbyError(message: string) {
 }
 
 export default function App() {
-  const { user, isAuthenticated } = useAuth();
+  const { user } = useAuth();
   const [currentView, setCurrentView] = useState<"game" | "leaderboard">("game");
 
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
       <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-3 py-3 sm:px-4 md:flex-row md:items-center md:justify-between md:px-6">
-          <div className="flex items-center gap-3">
+        <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-sm font-black text-zinc-950 shadow-sm">
               45
             </div>
-            <div>
+            <div className="min-w-0">
               <h1 className="text-lg font-display font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
               <p className="hidden text-[11px] font-medium text-zinc-400 sm:block">Word deduction arena</p>
             </div>
           </div>
-          <div className="flex w-full items-center justify-between gap-2 md:w-auto md:justify-end">
+          <div className="justify-self-end">
+            <SignOutButton />
+          </div>
+          <div className="col-span-2 md:col-span-1 md:justify-self-end">
             <Nav currentView={currentView} onChange={setCurrentView} />
           </div>
         </div>
@@ -80,8 +83,8 @@ function Nav(props: {
   }
 
   return (
-    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:justify-end">
-      <nav className="grid flex-1 grid-cols-2 items-center rounded-xl border border-zinc-700 bg-zinc-900 p-1 shadow-sm sm:flex sm:flex-initial">
+    <div className="flex w-full items-center">
+      <nav className="grid w-full grid-cols-2 items-center rounded-xl border border-zinc-700 bg-zinc-900 p-1 shadow-sm md:w-auto md:min-w-[15rem]">
         <button
           type="button"
           onClick={() => props.onChange("game")}
