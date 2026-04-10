@@ -105,17 +105,6 @@ export function upsertPlayerPresence(params: {
   const at = params.at ?? now();
   const state = params.state ?? "online";
 
-  if (runner !== db) {
-    const result = runPresenceUpsert(runner, {
-      playerId: params.playerId,
-      gameId: params.gameId,
-      userId: params.userId,
-      state,
-      at,
-    });
-    return isPromiseLike(result) ? result.then(() => undefined) : undefined;
-  }
-
   if (databaseProvider === "sqlite") {
     runPresenceUpsert(runner, {
       playerId: params.playerId,

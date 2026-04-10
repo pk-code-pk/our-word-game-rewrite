@@ -492,6 +492,9 @@ async function migrateRemoteTimestampColumns() {
     ALTER TABLE players ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
     ALTER TABLE guesses ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
     ALTER TABLE chat_messages ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
+    ALTER TABLE player_presence ALTER COLUMN last_seen_at TYPE BIGINT USING last_seen_at::bigint;
+    ALTER TABLE player_presence ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
+    ALTER TABLE player_presence ALTER COLUMN updated_at TYPE BIGINT USING updated_at::bigint;
     ALTER TABLE user_stats ALTER COLUMN updated_at TYPE BIGINT USING updated_at::bigint;
     ALTER TABLE friend_requests ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
     ALTER TABLE friend_requests ALTER COLUMN responded_at TYPE BIGINT USING responded_at::bigint;
@@ -692,14 +695,14 @@ export function initDb(): MaybePromise<void> {
           username TEXT,
           password_hash TEXT,
           is_anonymous INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL
+          created_at BIGINT NOT NULL
         );
 
         CREATE TABLE IF NOT EXISTS sessions (
           id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          expires_at INTEGER NOT NULL,
+          created_at BIGINT NOT NULL,
+          expires_at BIGINT NOT NULL,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -709,9 +712,9 @@ export function initDb(): MaybePromise<void> {
           code TEXT NOT NULL UNIQUE,
           status TEXT NOT NULL,
           public INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          last_activity_at INTEGER NOT NULL,
-          completed_at INTEGER,
+          created_at BIGINT NOT NULL,
+          last_activity_at BIGINT NOT NULL,
+          completed_at BIGINT,
           winner_player_id TEXT
         );
 
@@ -724,7 +727,7 @@ export function initDb(): MaybePromise<void> {
           secret_word TEXT NOT NULL,
           alphabet_json TEXT NOT NULL,
           total_guesses INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
+          created_at BIGINT NOT NULL,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
@@ -741,7 +744,7 @@ export function initDb(): MaybePromise<void> {
           match_count INTEGER NOT NULL,
           is_correct INTEGER NOT NULL,
           guess_number INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
+          created_at BIGINT NOT NULL,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
         );
@@ -755,7 +758,7 @@ export function initDb(): MaybePromise<void> {
           player_id TEXT NOT NULL,
           username TEXT NOT NULL,
           text TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
+          created_at BIGINT NOT NULL,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE
         );
@@ -767,9 +770,9 @@ export function initDb(): MaybePromise<void> {
           game_id TEXT NOT NULL,
           user_id TEXT NOT NULL,
           presence_state TEXT NOT NULL,
-          last_seen_at INTEGER NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
+          last_seen_at BIGINT NOT NULL,
+          created_at BIGINT NOT NULL,
+          updated_at BIGINT NOT NULL,
           FOREIGN KEY (player_id) REFERENCES players(id) ON DELETE CASCADE,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -789,7 +792,7 @@ export function initDb(): MaybePromise<void> {
           current_win_streak INTEGER NOT NULL DEFAULT 0,
           recent_results_json TEXT NOT NULL DEFAULT '[]',
           best_win_guesses INTEGER,
-          updated_at INTEGER NOT NULL,
+          updated_at BIGINT NOT NULL,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
@@ -801,8 +804,8 @@ export function initDb(): MaybePromise<void> {
           pair_high_user_id TEXT NOT NULL,
           status TEXT NOT NULL,
           acted_by_user_id TEXT,
-          created_at INTEGER NOT NULL,
-          responded_at INTEGER,
+          created_at BIGINT NOT NULL,
+          responded_at BIGINT,
           FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (receiver_user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (acted_by_user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -817,7 +820,7 @@ export function initDb(): MaybePromise<void> {
           id TEXT PRIMARY KEY,
           user_one_id TEXT NOT NULL,
           user_two_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
+          created_at BIGINT NOT NULL,
           request_id TEXT,
           FOREIGN KEY (user_one_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (user_two_id) REFERENCES users(id) ON DELETE CASCADE,
@@ -833,8 +836,8 @@ export function initDb(): MaybePromise<void> {
           sender_user_id TEXT NOT NULL,
           receiver_user_id TEXT NOT NULL,
           status TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          responded_at INTEGER,
+          created_at BIGINT NOT NULL,
+          responded_at BIGINT,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (sender_user_id) REFERENCES users(id) ON DELETE CASCADE,
           FOREIGN KEY (receiver_user_id) REFERENCES users(id) ON DELETE CASCADE
