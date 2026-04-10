@@ -14,7 +14,6 @@ import {
   signUp,
   upgradeAnonymousAccount,
 } from "./auth.js";
-import { checkAuthRouteThrottleAsync } from "./authRateLimit.js";
 import { databaseFile, databaseProvider, initDb } from "./db.js";
 import { createSocialRouter } from "./friends.js";
 import { getLeaderboard } from "./leaderboard.js";
@@ -66,24 +65,6 @@ function parseExpectedLength(value: unknown): 4 | 5 | undefined {
   return value === 4 || value === 5 ? value : undefined;
 }
 
-async function respondIfAuthThrottled(
-  req: express.Request,
-  res: express.Response,
-  action: "signup" | "signin" | "anonymous"
-) {
-  const decision = await checkAuthRouteThrottleAsync(req, action);
-  if (decision.allowed) {
-    return false;
-  }
-
-  res.setHeader("Retry-After", String(decision.retryAfterSeconds));
-  res.status(429).json({
-    error: decision.message,
-    retryAfterMs: decision.retryAfterMs,
-  });
-  return true;
-}
-
 function respondWithRouteError(res: express.Response, error: unknown, fallbackMessage: string) {
   const message = error instanceof Error ? error.message : fallbackMessage;
   const status = message === "You must be signed in." ? 401 : 400;
@@ -133,10 +114,6 @@ export function createApp() {
   });
 
   app.post("/api/auth/signup", async (req, res) => {
-    if (await respondIfAuthThrottled(req, res, "signup")) {
-      return;
-    }
-
     try {
       const currentUser = await getUserFromRequest(req);
       const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
@@ -165,10 +142,6 @@ export function createApp() {
   });
 
   app.post("/api/auth/signin", async (req, res) => {
-    if (await respondIfAuthThrottled(req, res, "signin")) {
-      return;
-    }
-
     try {
       const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
       const userId = await signIn(
@@ -183,10 +156,6 @@ export function createApp() {
   });
 
   app.post("/api/auth/anonymous", async (req, res) => {
-    if (await respondIfAuthThrottled(req, res, "anonymous")) {
-      return;
-    }
-
     const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
     const userId = await signInAnonymously();
     await createSession(res, userId, { replaceExistingSessionId: currentSessionId });

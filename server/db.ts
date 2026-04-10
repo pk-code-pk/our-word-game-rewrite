@@ -360,7 +360,7 @@ async function findAvailableUsernameRemote(
             client.unsafe(
               translateQueryForPostgres(`SELECT id FROM users
                WHERE LOWER(username) = LOWER(?)
-                 AND (? IS NULL OR id != ?)
+                 AND (?::text IS NULL OR id != ?)
                LIMIT 1`),
               [candidate, options?.excludeUserId ?? null, options?.excludeUserId ?? null],
               { prepare: true }
