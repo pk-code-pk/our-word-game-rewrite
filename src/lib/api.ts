@@ -26,6 +26,35 @@ export class ApiError extends Error {
   }
 }
 
+export function inferApiErrorMessage(params: {
+  status: number;
+  statusText: string;
+  path: string;
+  contentType: string | null;
+  responseText: string;
+  payload: { error?: string } | null;
+}) {
+  const { status, statusText, path, contentType, responseText, payload } = params;
+
+  if (payload?.error) {
+    return payload.error;
+  }
+
+  const lowerContentType = contentType?.toLowerCase() ?? "";
+  const looksLikeHtml = lowerContentType.includes("text/html");
+  const looksLikeVercelProtection =
+    responseText.includes("Vercel Authentication") ||
+    responseText.includes("Authentication Required") ||
+    responseText.includes("x-vercel-protection-bypass") ||
+    responseText.includes("vercel.com/sso-api");
+
+  if (looksLikeHtml && looksLikeVercelProtection) {
+    return `This deployment is blocked by Vercel Authentication, so ${path} is not reaching the app API. Disable Deployment Protection for this environment or use an unprotected deployment URL.`;
+  }
+
+  return `Request failed (${status}${statusText ? ` ${statusText}` : ""}).`;
+}
+
 type GameStateResponse = { gameState: GameStateView | null };
 type LegacyGameStateResponse = {
   gameState:
@@ -63,6 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
+    const contentType = response.headers.get("content-type");
     const responseText = await response.text().catch(() => "");
     let payload: { error?: string } | null = null;
 
@@ -74,7 +104,14 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       }
     }
 
-    const fallbackMessage = `Request failed (${response.status}${response.statusText ? ` ${response.statusText}` : ""}).`;
+    const fallbackMessage = inferApiErrorMessage({
+      status: response.status,
+      statusText: response.statusText,
+      path,
+      contentType,
+      responseText,
+      payload,
+    });
     if (response.status === 401 && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent(AUTH_ERROR_EVENT, {

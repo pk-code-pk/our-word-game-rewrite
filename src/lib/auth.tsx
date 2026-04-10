@@ -7,6 +7,7 @@ type AuthContextValue = {
   user: AuthUser | null;
   loading: boolean;
   isAuthenticated: boolean;
+  errorMessage: string | null;
   refresh: () => Promise<AuthUser | null>;
   signIn: (identifier: string, password: string) => Promise<AuthUser | null>;
   signUp: (email: string, password: string) => Promise<AuthUser | null>;
@@ -19,6 +20,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 export function AuthProvider({ children }: PropsWithChildren) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const isMountedRef = useRef(true);
 
@@ -34,6 +36,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
       const response = await api.me();
       if (isMountedRef.current && requestIdRef.current === requestId) {
         setUser(response.user);
+        setErrorMessage(null);
       }
       return response.user;
     } catch (error) {
@@ -43,6 +46,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         (options?.clearOnFailure || (error instanceof ApiError && error.status === 401))
       ) {
         setUser(null);
+        setErrorMessage(error instanceof Error ? error.message : "Authentication failed.");
       }
       throw error;
     }
@@ -90,12 +94,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
       user,
       loading,
       isAuthenticated: Boolean(user),
+      errorMessage,
       refresh,
       signIn: async (identifier, password) => {
         const requestId = invalidatePendingRequests();
         const response = await api.signIn(identifier, password);
         if (isMountedRef.current && requestIdRef.current === requestId) {
           setUser(response.user);
+          setErrorMessage(null);
         }
         return response.user;
       },
@@ -104,6 +110,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const response = await api.signUp(email, password);
         if (isMountedRef.current && requestIdRef.current === requestId) {
           setUser(response.user);
+          setErrorMessage(null);
         }
         return response.user;
       },
@@ -112,6 +119,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         const response = await api.signInAnonymous();
         if (isMountedRef.current && requestIdRef.current === requestId) {
           setUser(response.user);
+          setErrorMessage(null);
         }
         return response.user;
       },
@@ -123,7 +131,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         }
       },
     }),
-    [loading, user]
+    [errorMessage, loading, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

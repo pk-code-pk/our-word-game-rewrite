@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeGameStateResponse } from "./api";
+import { inferApiErrorMessage, normalizeGameStateResponse } from "./api";
 
 describe("normalizeGameStateResponse", () => {
   it("fills in safe defaults for legacy game-state payloads missing presence", () => {
@@ -68,5 +68,34 @@ describe("normalizeGameStateResponse", () => {
     });
     expect(payload.gameState?.canChat).toBe(false);
     expect(payload.gameState?.me.alphabet).toEqual({});
+  });
+});
+
+describe("inferApiErrorMessage", () => {
+  it("detects Vercel deployment protection responses", () => {
+    const message = inferApiErrorMessage({
+      status: 401,
+      statusText: "Unauthorized",
+      path: "/api/auth/signin",
+      contentType: "text/html; charset=utf-8",
+      responseText: "<title>Authentication Required</title><a>Vercel Authentication</a>",
+      payload: null,
+    });
+
+    expect(message).toContain("Vercel Authentication");
+    expect(message).toContain("/api/auth/signin");
+  });
+
+  it("prefers API payload errors when JSON is available", () => {
+    const message = inferApiErrorMessage({
+      status: 400,
+      statusText: "Bad Request",
+      path: "/api/auth/signup",
+      contentType: "application/json; charset=utf-8",
+      responseText: "{\"error\":\"Could not sign up.\"}",
+      payload: { error: "Could not sign up." },
+    });
+
+    expect(message).toBe("Could not sign up.");
   });
 });

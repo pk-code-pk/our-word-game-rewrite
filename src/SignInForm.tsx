@@ -42,6 +42,9 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
   const [anonymousSubmitting, setAnonymousSubmitting] = useState(false);
   const isAnonymousGuest = Boolean(auth.user?.isAnonymous);
   const effectiveFlow = isUpgradeMode ? "signUp" : flow;
+  const isDeploymentProtectionBlocked = Boolean(
+    auth.errorMessage?.includes("Vercel Authentication")
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -140,6 +143,18 @@ export function SignInForm({ mode = "default" }: SignInFormProps) {
           Guest upgrade stays locked to account creation so this session stays attached to one identity.
         </div>
       )}
+
+      {auth.errorMessage ? (
+        <div
+          className={`mt-6 rounded-xl px-4 py-3 text-sm leading-6 shadow-sm ${
+            isDeploymentProtectionBlocked
+              ? "border border-amber-200 bg-amber-50 text-amber-900"
+              : "border border-rose-200 bg-rose-50 text-rose-900"
+          }`}
+        >
+          {auth.errorMessage}
+        </div>
+      ) : null}
 
       <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
         <label className="block space-y-2">
