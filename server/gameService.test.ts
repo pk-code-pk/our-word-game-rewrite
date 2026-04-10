@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { db, initDb } from "./db";
+import { db, initDb } from "./db.js";
 import {
   createGame,
   cancelWaitingLobby,
@@ -12,10 +12,10 @@ import {
   sendChatMessage,
   submitGuess,
   updateAlphabet,
-} from "./gameService";
-import type { AuthUser } from "./types";
-import { GUESS_BURST_LIMIT, GUESS_COOLDOWN_MS } from "../shared/gameLogic";
-import { PLAYER_PRESENCE_OFFLINE_TTL_MS } from "./presence";
+} from "./gameService.js";
+import type { AuthUser } from "./types.js";
+import { GUESS_BURST_LIMIT, GUESS_COOLDOWN_MS } from "../shared/gameLogic.js";
+import { PLAYER_PRESENCE_OFFLINE_TTL_MS } from "./presence.js";
 
 function makeUser(id: string, email: string, username = email.split("@")[0] ?? id): AuthUser {
   return {

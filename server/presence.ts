@@ -1,5 +1,5 @@
-import { databaseProvider, db } from "./db";
-import type { PresenceState } from "../shared/types";
+import { databaseProvider, db } from "./db.js";
+import type { PresenceState } from "../shared/types.js";
 
 export const PLAYER_PRESENCE_OFFLINE_TTL_MS = 45 * 1000;
 

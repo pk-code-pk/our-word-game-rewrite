@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { v4 as uuid } from "uuid";
-import { databaseProvider, db } from "./db";
+import { databaseProvider, db } from "./db.js";
 import {
   buildGameStateView,
   calculateMatchCount,
@@ -16,8 +16,8 @@ import {
   pushRecentResult,
   sanitizeChatText,
   sanitizeUsername,
-} from "../shared/gameLogic";
-import { getWordValidationReason } from "../shared/wordBank";
+} from "../shared/gameLogic.js";
+import { getWordValidationReason } from "../shared/wordBank.js";
 import type {
   AlphabetState,
   AuthUser,
@@ -27,8 +27,8 @@ import type {
   LeaderboardEntry,
   PublicLobby,
   RecentGameSummary,
-} from "./types";
-import { getGamePresence, markPlayerOffline, touchPlayerPresence, upsertPlayerPresence } from "./presence";
+} from "./types.js";
+import { getGamePresence, markPlayerOffline, touchPlayerPresence, upsertPlayerPresence } from "./presence.js";
 
 const WAITING_GAME_LIMIT = 100;
 

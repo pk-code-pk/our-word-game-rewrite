@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Request, Response } from "express";
 import { once } from "node:events";
-import { createApp } from "./app";
-import { db, initDb } from "./db";
+import { createApp } from "./app.js";
+import { db, initDb } from "./db.js";
 import {
   resetAuthThrottleState,
   clearSession,
@@ -13,9 +13,9 @@ import {
   signInAnonymously,
   signUp,
   upgradeAnonymousAccount,
-} from "./auth";
-import { createGame, getPlayerGames } from "./gameService";
-import { listSocialOverview } from "./friends";
+} from "./auth.js";
+import { createGame, getPlayerGames } from "./gameService.js";
+import { listSocialOverview } from "./friends.js";
 import { v4 as uuid } from "uuid";
 
 function createMockRequest(sessionId?: string) {

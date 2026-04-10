@@ -3,7 +3,7 @@ import BetterSqlite3 from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
-import { SOCIAL_USERNAME_MAX_LENGTH, sanitizeSocialUsername } from "../shared/gameLogic";
+import { SOCIAL_USERNAME_MAX_LENGTH, sanitizeSocialUsername } from "../shared/gameLogic.js";
 
 export type MaybePromise<T> = T | Promise<T>;
 type SqlRow = Record<string, unknown>;

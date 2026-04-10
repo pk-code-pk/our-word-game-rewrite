@@ -13,11 +13,11 @@ import {
   signInAnonymously,
   signUp,
   upgradeAnonymousAccount,
-} from "./auth";
-import { checkAuthRouteThrottleAsync } from "./authRateLimit";
-import { databaseFile, databaseProvider, initDb } from "./db";
-import { createSocialRouter } from "./friends";
-import { getLeaderboard } from "./leaderboard";
+} from "./auth.js";
+import { checkAuthRouteThrottleAsync } from "./authRateLimit.js";
+import { databaseFile, databaseProvider, initDb } from "./db.js";
+import { createSocialRouter } from "./friends.js";
+import { getLeaderboard } from "./leaderboard.js";
 import {
   cancelWaitingLobby,
   cleanupExpiredWaitingGames,
@@ -31,8 +31,8 @@ import {
   sendChatMessage,
   submitGuess,
   updateAlphabet,
-} from "./gameService";
-import { getWordBankStats, validateGameWord } from "../shared/wordBank";
+} from "./gameService.js";
+import { getWordBankStats, validateGameWord } from "../shared/wordBank.js";
 
 let initialized = false;
 let initializePromise: Promise<void> | null = null;

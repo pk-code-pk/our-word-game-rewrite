@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { Request } from "express";
-import { db, initDb } from "./db";
+import { db, initDb } from "./db.js";
 import {
   checkAuthRouteThrottle,
   resetAuthThrottleState,
   type AuthThrottleOptions,
   type AuthThrottleAction,
-} from "./authRateLimit";
+} from "./authRateLimit.js";
 
 function createMockRequest({
   ip,

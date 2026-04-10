@@ -1,5 +1,5 @@
 import type { Request } from "express";
-import { db } from "./db";
+import { db } from "./db.js";
 
 export type AuthThrottleAction = "signup" | "signin" | "anonymous";
 

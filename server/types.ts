@@ -20,4 +20,4 @@ export type {
   SocialSearchResult,
   SocialUserSummary,
   WordValidationResult,
-} from "../shared/types";
+} from "../shared/types.js";

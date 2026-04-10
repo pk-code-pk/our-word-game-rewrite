@@ -9,8 +9,8 @@ import {
   isWaitingGameExpired,
   pushRecentResult,
   sanitizeChatText,
-} from "./gameLogic";
-import { getWordValidationReason, isAllowedGameWord } from "./wordBank";
+} from "./gameLogic.js";
+import { getWordValidationReason, isAllowedGameWord } from "./wordBank.js";
 
 describe("word bank", () => {
   it("accepts known local words and rejects invalid ones", () => {

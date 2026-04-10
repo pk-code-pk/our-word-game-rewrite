@@ -1,5 +1,5 @@
-import type { WordValidationResult } from "./types";
-import { FIVE_LETTER_WORDS, FOUR_LETTER_WORDS } from "./wordLists";
+import type { WordValidationResult } from "./types.js";
+import { FIVE_LETTER_WORDS, FOUR_LETTER_WORDS } from "./wordLists.js";
 
 const FOUR_LETTER_SET = new Set<string>(FOUR_LETTER_WORDS);
 const FIVE_LETTER_SET = new Set<string>(FIVE_LETTER_WORDS);

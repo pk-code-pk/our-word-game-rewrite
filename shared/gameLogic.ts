@@ -1,4 +1,4 @@
-import type { AlphabetState } from "./types";
+import type { AlphabetState } from "./types.js";
 
 export const GAME_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 export const USERNAME_MAX_LENGTH = 20;

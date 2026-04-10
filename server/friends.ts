@@ -1,10 +1,10 @@
 import crypto from "node:crypto";
 import { Router, type Request, type Response } from "express";
 import { v4 as uuid } from "uuid";
-import { requireUser } from "./auth";
-import { db } from "./db";
-import { createEmptyAlphabet, isValidUsername, isWaitingGameExpired, normalizeWord, sanitizeUsername } from "../shared/gameLogic";
-import { getWordValidationReason } from "../shared/wordBank";
+import { requireUser } from "./auth.js";
+import { db } from "./db.js";
+import { createEmptyAlphabet, isValidUsername, isWaitingGameExpired, normalizeWord, sanitizeUsername } from "../shared/gameLogic.js";
+import { getWordValidationReason } from "../shared/wordBank.js";
 import type {
   AuthUser,
   FriendRequestStatus,
@@ -18,7 +18,7 @@ import type {
   SocialRelationship,
   SocialSearchResult,
   SocialUserSummary,
-} from "./types";
+} from "./types.js";
 
 type UserRow = {
   id: string;

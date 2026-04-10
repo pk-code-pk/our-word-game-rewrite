@@ -2,10 +2,10 @@ import type { Request, Response } from "express";
 import bcrypt from "bcryptjs";
 import crypto from "node:crypto";
 import { v4 as uuid } from "uuid";
-import { allocateUniqueUsernameRemote, db } from "./db";
-import type { AuthUser } from "./types";
-import { sanitizeSocialUsername } from "../shared/gameLogic";
-export { resetAuthThrottleState } from "./authRateLimit";
+import { allocateUniqueUsernameRemote, db } from "./db.js";
+import type { AuthUser } from "./types.js";
+import { sanitizeSocialUsername } from "../shared/gameLogic.js";
+export { resetAuthThrottleState } from "./authRateLimit.js";
 
 const SESSION_COOKIE = "fourfive_session";
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;

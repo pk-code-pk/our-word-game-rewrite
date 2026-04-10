@@ -1,6 +1,6 @@
-import { databaseProvider, db } from "./db";
-import { pushRecentResult } from "../shared/gameLogic";
-import type { LeaderboardEntry } from "./types";
+import { databaseProvider, db } from "./db.js";
+import { pushRecentResult } from "../shared/gameLogic.js";
+import type { LeaderboardEntry } from "./types.js";
 
 const LEADERBOARD_LIMIT = 10;
 type MaybePromise<T> = T | Promise<T>;

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { db, initDb } from "./db";
-import { buildLeaderboard, getLeaderboard, type LeaderboardSourceRow } from "./leaderboard";
-import type { AuthUser } from "./types";
+import { db, initDb } from "./db.js";
+import { buildLeaderboard, getLeaderboard, type LeaderboardSourceRow } from "./leaderboard.js";
+import type { AuthUser } from "./types.js";
 
 function makeUser(id: string, email: string, username = email.split("@")[0] ?? id): AuthUser {
   return {

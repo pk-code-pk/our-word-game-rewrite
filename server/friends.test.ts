@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { once } from "node:events";
-import type { AuthUser } from "./types";
-import { db, initDb } from "./db";
-import { createApp } from "./app";
+import type { AuthUser } from "./types.js";
+import { db, initDb } from "./db.js";
+import { createApp } from "./app.js";
 import {
   acceptGameInvite,
   acceptFriendRequest,
@@ -15,8 +15,8 @@ import {
   searchUsers,
   sendFriendRequest,
   sendGameInvite,
-} from "./friends";
-import { createGame, getGameState } from "./gameService";
+} from "./friends.js";
+import { createGame, getGameState } from "./gameService.js";
 
 function makeUser(id: string, email: string, username = email.split("@")[0] ?? id): AuthUser {
   return {
