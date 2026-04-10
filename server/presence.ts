@@ -70,9 +70,18 @@ export function ensurePresenceStore(): MaybePromise<void> {
   }
 
   if (!presenceStoreInitPromise) {
-    presenceStoreInitPromise = Promise.resolve(db.exec(createSql)).then(() =>
-      Promise.resolve(db.exec(migrateSql)).then(() => undefined)
+    const promise = Promise.resolve(db.exec(createSql)).then(() =>
+      // Wrap migration in catch: the ALTER TABLE is idempotent and may fail
+      // if columns are already BIGINT or another Lambda ran it concurrently.
+      Promise.resolve(db.exec(migrateSql)).catch(() => undefined)
     );
+    presenceStoreInitPromise = promise;
+    // Reset on failure so the next call can retry
+    promise.catch(() => {
+      if (presenceStoreInitPromise === promise) {
+        presenceStoreInitPromise = null;
+      }
+    });
   }
 
   return presenceStoreInitPromise;

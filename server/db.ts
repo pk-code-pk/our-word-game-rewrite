@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import BetterSqlite3 from "better-sqlite3";
+import { createRequire } from "module";
+// Type-only import — erased at runtime, so the native addon is never loaded in Postgres/serverless mode
+import type BetterSqlite3Constructor from "better-sqlite3";
 import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
@@ -10,7 +12,7 @@ type SqlRow = Record<string, unknown>;
 type RunResult = {
   changes: number;
 };
-type LocalDatabase = InstanceType<typeof BetterSqlite3>;
+type LocalDatabase = InstanceType<typeof BetterSqlite3Constructor>;
 type RemoteQueryResult<T extends SqlRow = SqlRow> = T[] & {
   count?: number;
   command?: string;
@@ -43,8 +45,14 @@ if (!usingRemoteDatabase) {
 export const databaseFile = process.env.DATABASE_FILE ?? path.join(dataDir, "fourfive.db");
 export const databaseProvider = usingRemoteDatabase ? "postgres" : "sqlite";
 
-const localDb = usingRemoteDatabase ? null : new BetterSqlite3(databaseFile);
-if (localDb) {
+// Conditionally require better-sqlite3 only in SQLite mode.
+// Using createRequire (not a static import) so the native addon is never loaded
+// in serverless/Postgres environments where it would cause module initialization failures.
+const _require = createRequire(import.meta.url);
+let localDb: LocalDatabase | null = null;
+if (!usingRemoteDatabase) {
+  const Sqlite = _require("better-sqlite3") as { new(filename: string): LocalDatabase };
+  localDb = new Sqlite(databaseFile);
   localDb.pragma("journal_mode = WAL");
   localDb.pragma("foreign_keys = ON");
 }
@@ -451,7 +459,7 @@ async function backfillUsernamesRemote() {
     reserved.add(username.toLowerCase());
 
     if (row.username?.trim() !== username) {
-      await remoteDb.unsafe(`UPDATE users SET username = ? WHERE id = ?`, [username, row.id], { prepare: true });
+      await remoteDb.unsafe(`UPDATE users SET username = $1 WHERE id = $2`, [username, row.id], { prepare: true });
     }
   }
 }
@@ -674,7 +682,7 @@ export function initDb(): MaybePromise<void> {
   }
 
   if (!initPromise) {
-    initPromise = (async () => {
+    const promise = (async () => {
       remoteDb = await getRemoteDb();
 
       await remoteExec(`
@@ -839,13 +847,23 @@ export function initDb(): MaybePromise<void> {
       `);
 
       await ensureColumnRemote("users", "username", "username TEXT");
-      await migrateRemoteTimestampColumns();
+      // Migration is idempotent; ignore errors from concurrent Lambda cold-starts
+      // running the same ALTER TABLE simultaneously.
+      await migrateRemoteTimestampColumns().catch(() => undefined);
       await backfillUsernamesRemote();
       await remoteDb.unsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(LOWER(username))`, [], {
         prepare: false,
       });
       await ensureColumnRemote("user_stats", "total_win_guesses", "total_win_guesses INTEGER NOT NULL DEFAULT 0");
     })();
+
+    initPromise = promise;
+    // Reset on failure so the next request can retry rather than permanently failing
+    promise.catch(() => {
+      if (initPromise === promise) {
+        initPromise = null;
+      }
+    });
   }
 
   return initPromise;
