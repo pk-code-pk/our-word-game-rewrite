@@ -22,6 +22,7 @@ type ServerMessage =
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
 const PING_INTERVAL_MS = 20_000;
+const POLL_INTERVAL_MS = 3_000;
 
 function buildSocketUrl(): string {
   if (typeof window === "undefined") {
@@ -40,9 +41,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
   const [connected, setConnected] = useState(false);
 
   const dataRef = useRef<GameSocketResponse | undefined>(undefined);
+  const connectedRef = useRef(false);
 
   useEffect(() => {
     dataRef.current = undefined;
+    connectedRef.current = false;
     setData(undefined);
     setError(null);
     setLoading(true);
@@ -58,7 +61,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     let reconnectAttempt = 0;
     let reconnectTimer: number | null = null;
     let pingTimer: number | null = null;
-    let currentUrl = buildSocketUrl();
+    let pollTimer: number | null = null;
 
     const clearReconnect = () => {
       if (reconnectTimer !== null) {
@@ -74,6 +77,13 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       }
     };
 
+    const clearPoll = () => {
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+
     const applyState = (state: GameStateView | null) => {
       const next: GameSocketResponse = { gameState: state };
       dataRef.current = next;
@@ -85,11 +95,10 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     const applyError = (cause: unknown) => {
       const err = cause instanceof Error ? cause : new Error(typeof cause === "string" ? cause : "Connection error.");
       setError(err);
-      // Keep last-known data so UI doesn't flash empty
       setLoading(dataRef.current === undefined);
     };
 
-    const fetchInitialState = async () => {
+    const fetchState = async () => {
       try {
         const response = await api.getGameState(gameId);
         if (cancelled) return;
@@ -98,6 +107,19 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
         if (cancelled) return;
         applyError(cause);
       }
+    };
+
+    const startPolling = () => {
+      clearPoll();
+      pollTimer = window.setInterval(() => {
+        if (!cancelled && !connectedRef.current) {
+          void fetchState();
+        }
+      }, POLL_INTERVAL_MS);
+    };
+
+    const stopPolling = () => {
+      clearPoll();
     };
 
     const scheduleReconnect = () => {
@@ -120,9 +142,8 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       if (cancelled) return;
       clearReconnect();
 
-      currentUrl = buildSocketUrl();
       try {
-        ws = new WebSocket(currentUrl);
+        ws = new WebSocket(buildSocketUrl());
       } catch (cause) {
         applyError(cause);
         scheduleReconnect();
@@ -135,8 +156,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
           return;
         }
         reconnectAttempt = 0;
+        connectedRef.current = true;
         setConnected(true);
         setError(null);
+        stopPolling();
+
         try {
           ws?.send(JSON.stringify({ type: "subscribe", gameId }));
         } catch (cause) {
@@ -149,7 +173,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
             try {
               ws.send(JSON.stringify({ type: "ping" }));
             } catch {
-              // Ignore — close handler will trigger reconnect
+              // ignore — close handler will trigger reconnect
             }
           }
         }, PING_INTERVAL_MS);
@@ -180,43 +204,39 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       };
 
       ws.onerror = () => {
-        if (cancelled) return;
-        // Don't clobber last-known data. Let onclose handle reconnect.
+        // Let onclose handle reconnect
       };
 
       ws.onclose = (event) => {
         clearPing();
+        connectedRef.current = false;
         setConnected(false);
         if (cancelled) return;
 
-        if (event.code === 1000) {
-          // Normal closure; don't reconnect
-          return;
-        }
+        if (event.code === 1000) return;
 
         if (event.code === 1008 || event.code === 4401 || event.code === 401) {
-          // Auth failure — no point retrying the same way, but try once after a delay
           applyError(new Error("Not authenticated."));
         }
 
+        // Fall back to polling while reconnecting so updates still arrive
+        startPolling();
         scheduleReconnect();
       };
     };
 
     const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible" || cancelled) {
-        return;
-      }
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        return;
-      }
+      if (document.visibilityState !== "visible" || cancelled) return;
+      if (ws && ws.readyState === WebSocket.OPEN) return;
       reconnectAttempt = 0;
       clearReconnect();
       openSocket();
     };
 
-    void fetchInitialState();
+    void fetchState();
     openSocket();
+    // Start polling immediately as a safety net; stops once WS connects
+    startPolling();
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleVisibilityChange);
@@ -225,6 +245,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       cancelled = true;
       clearReconnect();
       clearPing();
+      clearPoll();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleVisibilityChange);
       if (ws) {
