@@ -43,7 +43,7 @@ function Content() {
 
   const recentGamesQuery = usePollingQuery(() => api.getPlayerGames(), [user?.id], {
     enabled: isAuthenticated,
-    intervalMs: 5000,
+    intervalMs: 2000,
   });
 
   const [playState, setPlayState] = useState<PlayState>(() =>
