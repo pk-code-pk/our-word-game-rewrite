@@ -33,8 +33,14 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
         }
 
         if (letter in next) {
-          delete next[letter];
-          changed = true;
+          // Only clear the optimistic value once the server confirms it —
+          // if the server still has the old value (stale WS push), keep showing
+          // our optimistic state so the letter doesn't flicker back.
+          const serverValue = alphabet[letter] ?? "unknown";
+          if (serverValue === next[letter]) {
+            delete next[letter];
+            changed = true;
+          }
         }
       }
 
