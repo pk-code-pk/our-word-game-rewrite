@@ -94,8 +94,8 @@ async function getRemoteDb() {
   if (!remoteClientPromise) {
     remoteClientPromise = Promise.resolve().then(() => {
       const client = postgres(remoteDatabaseUrl, {
-        max: 1,
-        idle_timeout: 20,
+        max: 3,
+        idle_timeout: 60,
         connect_timeout: 10,
         types: {
           bigint: postgres.BigInt,
@@ -502,6 +502,16 @@ async function migrateRemoteTimestampColumns() {
     ALTER TABLE game_invites ALTER COLUMN created_at TYPE BIGINT USING created_at::bigint;
     ALTER TABLE game_invites ALTER COLUMN responded_at TYPE BIGINT USING responded_at::bigint;
   `);
+}
+
+export async function keepDbAlive(): Promise<void> {
+  if (!usingRemoteDatabase) return;
+  try {
+    const client = await getRemoteDb();
+    await client.unsafe("SELECT 1");
+  } catch {
+    // ignore — next real query will reconnect
+  }
 }
 
 let initPromise: Promise<void> | null = null;
