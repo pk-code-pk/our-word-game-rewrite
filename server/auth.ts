@@ -36,6 +36,10 @@ function isProduction() {
   return process.env.NODE_ENV === "production";
 }
 
+function isCrossOrigin() {
+  return Boolean(process.env.ALLOWED_ORIGINS);
+}
+
 function normalizeEmail(email: string) {
   return email.trim().toLowerCase();
 }
@@ -176,7 +180,7 @@ export function createSession(res: Response, userId: string, options?: CreateSes
         () => {
           res.cookie(SESSION_COOKIE, sessionId, {
             httpOnly: true,
-            sameSite: "strict",
+            sameSite: isCrossOrigin() ? "none" : "strict",
             secure: isProduction(),
             maxAge: SESSION_TTL_MS,
           });
@@ -191,7 +195,7 @@ export function clearSession(req: Request, res: Response): MaybePromise<void> {
   return flatMapMaybePromise(deleteSession(sessionId), () => {
     res.clearCookie(SESSION_COOKIE, {
       httpOnly: true,
-      sameSite: "strict",
+      sameSite: isCrossOrigin() ? "none" : "strict",
       secure: isProduction(),
     });
   });
