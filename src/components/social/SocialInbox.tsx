@@ -59,7 +59,7 @@ export function SocialInbox({
 
   const canUseInbox = Boolean(user && !user.isAnonymous);
   const inboxQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
-    intervalMs: 2000,
+    intervalMs: 1000,
     enabled: canUseInbox,
   });
 

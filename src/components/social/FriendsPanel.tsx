@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, useEffect, type FormEvent } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
@@ -12,6 +12,8 @@ interface FriendsPanelProps {
   refreshKey?: number;
   onSocialMutated?: () => void;
   className?: string;
+  forceOpen?: boolean;
+  onForceOpenConsumed?: () => void;
 }
 
 function formatTimestamp(timestamp: number) {
@@ -38,9 +40,18 @@ export function FriendsPanel({
   refreshKey,
   onSocialMutated,
   className = "",
+  forceOpen,
+  onForceOpenConsumed,
 }: FriendsPanelProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      onForceOpenConsumed?.();
+    }
+  }, [forceOpen, onForceOpenConsumed]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addUsername, setAddUsername] = useState("");
@@ -50,7 +61,7 @@ export function FriendsPanel({
 
   const canUseFriends = Boolean(user && !user.isAnonymous);
   const socialQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
-    intervalMs: 2000,
+    intervalMs: 1000,
     enabled: canUseFriends && !showAddFriend,
   });
 

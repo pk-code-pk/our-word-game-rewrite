@@ -43,13 +43,14 @@ function Content() {
 
   const recentGamesQuery = usePollingQuery(() => api.getPlayerGames(), [user?.id], {
     enabled: isAuthenticated,
-    intervalMs: 2000,
+    intervalMs: 1000,
   });
 
   const [playState, setPlayState] = useState<PlayState>(() =>
     user?.id ? readStoredPlayState(user.id, user) : createDefaultPlayState(user)
   );
   const [socialRefreshKey, setSocialRefreshKey] = useState(0);
+  const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
 
   function refreshSocialData() {
     setSocialRefreshKey((tick) => tick + 1);
@@ -159,6 +160,8 @@ function Content() {
                 onQuickInvite={handleQuickInvite}
                 refreshKey={socialRefreshKey}
                 onSocialMutated={refreshSocialData}
+                forceOpen={openFriendsPanel}
+                onForceOpenConsumed={() => setOpenFriendsPanel(false)}
               />
             )}
             {canUseSocial && (
@@ -231,6 +234,7 @@ function Content() {
                     onGameStart={(gameId) => {
                       setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                     }}
+                    onPlayWithFriend={() => setOpenFriendsPanel(true)}
                   />
                 )}
               </div>

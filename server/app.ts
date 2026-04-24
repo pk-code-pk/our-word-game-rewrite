@@ -25,6 +25,7 @@ import {
   getPlayerGames,
   joinGame,
   listPublicLobbies,
+  matchmake,
   markGamePresenceOffline,
   submitGuess,
   updateAlphabet,
@@ -229,6 +230,15 @@ export function createApp() {
       res.json(await createGame(user, req.body.username ?? "", req.body.secretWord ?? "", Boolean(req.body.public)));
     } catch (error) {
       respondWithRouteError(res, error, "Could not create game.");
+    }
+  });
+
+  app.post("/api/games/matchmake", async (req, res) => {
+    try {
+      const user = await requireUser(req);
+      res.json(await matchmake(user, req.body.username ?? "", req.body.secretWord ?? ""));
+    } catch (error) {
+      respondWithRouteError(res, error, "Could not find a match.");
     }
   });
 

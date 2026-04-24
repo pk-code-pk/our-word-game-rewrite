@@ -236,6 +236,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  matchmake: (payload: { username: string; secretWord: string }) =>
+    request<{ gameId: string }>("/api/games/matchmake", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getGameState: async (gameId: string) =>
     normalizeGameStateResponse(await request<LegacyGameStateResponse>(`/api/games/${gameId}`)),
   submitGuess: (gameId: string, payload: { type: "fourLetter" | "fullWord"; text: string }) =>

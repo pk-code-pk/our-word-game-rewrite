@@ -632,6 +632,57 @@ export function listPublicLobbies(): any {
   })();
 }
 
+export function matchmake(
+  user: AuthUser,
+  usernameInput: string,
+  secretWordInput: string
+): { gameId: string; code: string };
+export function matchmake(
+  user: AuthUser,
+  usernameInput: string,
+  secretWordInput: string
+): any {
+  if (databaseProvider === "sqlite") {
+    cleanupExpiredWaitingGames();
+
+    const row = db
+      .prepare(
+        `SELECT games.id, games.code FROM games
+         WHERE games.public = 1 AND games.status = 'waiting'
+         AND games.id NOT IN (SELECT game_id FROM players WHERE user_id = ?)
+         ORDER BY games.created_at ASC LIMIT 1`
+      )
+      .get(user.id) as { id: string; code: string } | undefined;
+
+    if (row) {
+      joinGame(user, row.code, usernameInput, secretWordInput);
+      return { gameId: row.id, code: row.code };
+    }
+
+    return createGame(user, usernameInput, secretWordInput, true);
+  }
+
+  return (async () => {
+    await cleanupExpiredWaitingGames();
+
+    const row = (await db
+      .prepare(
+        `SELECT games.id, games.code FROM games
+         WHERE games.public = 1 AND games.status = 'waiting'
+         AND games.id NOT IN (SELECT game_id FROM players WHERE user_id = ?)
+         ORDER BY games.created_at ASC LIMIT 1`
+      )
+      .get(user.id)) as { id: string; code: string } | undefined;
+
+    if (row) {
+      await joinGame(user, row.code, usernameInput, secretWordInput);
+      return { gameId: row.id, code: row.code };
+    }
+
+    return createGame(user, usernameInput, secretWordInput, true);
+  })();
+}
+
 export function getPlayerGames(user: AuthUser): RecentGameSummary[];
 export function getPlayerGames(user: AuthUser): any {
   const mapRows = async (
