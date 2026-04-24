@@ -51,7 +51,7 @@ export function FriendsPanel({
   const canUseFriends = Boolean(user && !user.isAnonymous);
   const socialQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
     intervalMs: 2000,
-    enabled: canUseFriends,
+    enabled: canUseFriends && !showAddFriend,
   });
 
   const social = socialQuery.data?.social;

@@ -228,10 +228,6 @@ function Content() {
                     onSecretWordChange={(word) => setPlayState((prev) => ({ ...prev, secretWord: word }))}
                     username={username}
                     onUsernameChange={(value) => setPlayState((prev) => ({ ...prev, username: value }))}
-                    gameCode={gameCode}
-                    onGameCodeChange={(value) => setPlayState((prev) => ({ ...prev, lobbyCode: value }))}
-                    isPublic={isPublic}
-                    onIsPublicChange={(value) => setPlayState((prev) => ({ ...prev, isPublic: value }))}
                     onGameStart={(gameId) => {
                       setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                     }}
