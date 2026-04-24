@@ -19,6 +19,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const [guessText, setGuessText] = useState("");
   const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [optimisticGuess, setOptimisticGuess] = useState<{
+    id: string; text: string; type: "fourLetter" | "fullWord";
+  } | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
   const announcedCompletionRef = useRef<string | null>(null);
   const guessFormRef = useRef<HTMLFormElement | null>(null);
@@ -31,6 +34,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
+
+  // Clear optimistic guess once the real state catches up
+  useEffect(() => {
+    if (optimisticGuess && myGuesses.some((g) => g.text === optimisticGuess.text && g.type === optimisticGuess.type)) {
+      setOptimisticGuess(null);
+    }
+  }, [myGuesses, optimisticGuess]);
 
   useEffect(() => {
     latestGameStatusRef.current = gameState?.game.status;
@@ -135,24 +145,29 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
+    // Optimistically show the guess immediately
+    setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType });
+    setGuessText("");
+    keepMyGuessesPinnedRef.current = true;
+    window.requestAnimationFrame(() => {
+      guessInputRef.current?.focus({ preventScroll: true });
+    });
+
     setIsSubmitting(true);
     try {
       const result = await api.submitGuess(gameId, { type: guessType, text: word });
       if (result.isCorrect) {
-        toast.success("You guessed it correctly! You win!");
+        toast.success("You guessed it!");
       } else if (guessType === "fullWord") {
-        toast.success("Guess submitted! That's not the correct word.");
+        toast("Not the word.");
       } else {
-        toast.success(
-          `Guess submitted! ${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
+        toast(
+          `${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
         );
       }
-      setGuessText("");
-      keepMyGuessesPinnedRef.current = true;
-      window.requestAnimationFrame(() => {
-        guessInputRef.current?.focus({ preventScroll: true });
-      });
     } catch (error) {
+      setOptimisticGuess(null);
+      setGuessText(word);
       toast.error(error instanceof Error ? error.message : "Failed to submit guess");
     } finally {
       setIsSubmitting(false);
@@ -308,6 +323,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 title="Your guesses"
                 elementId="my-guesses"
                 guesses={myGuesses}
+                optimisticGuess={optimisticGuess}
                 emptyText="No guesses yet"
                 scrollRef={myGuessesRef}
                 onScroll={() => {
@@ -417,10 +433,15 @@ function GuessColumn(props: {
     matchCount: number;
     isCorrect: boolean;
   }>;
+  optimisticGuess?: { id: string; text: string; type: "fourLetter" | "fullWord" } | null;
   emptyText: string;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: React.UIEventHandler<HTMLDivElement>;
 }) {
+  const allGuesses = props.optimisticGuess
+    ? [...props.guesses, { ...props.optimisticGuess, matchCount: 0, isCorrect: false, pending: true }]
+    : props.guesses;
+
   return (
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
       <div className="mb-3">
@@ -433,15 +454,20 @@ function GuessColumn(props: {
         className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(10rem,20dvh)]"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
-        {props.guesses.length === 0 ? (
+        {allGuesses.length === 0 ? (
           <p className="text-sm leading-6 text-zinc-400">{props.emptyText}</p>
         ) : (
-          props.guesses.map((guess) => (
-            <div key={guess.id} className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+          allGuesses.map((guess) => (
+            <div
+              key={guess.id}
+              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+            >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}
               </span>
-              {renderGuessResult(guess)}
+              {"pending" in guess && guess.pending
+                ? <span className="text-xs text-zinc-400">...</span>
+                : renderGuessResult(guess)}
             </div>
           ))
         )}

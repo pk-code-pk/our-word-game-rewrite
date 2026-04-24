@@ -33,7 +33,7 @@ export default function App() {
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
-      <Toaster />
+      <Toaster position="top-center" />
     </div>
   );
 }
