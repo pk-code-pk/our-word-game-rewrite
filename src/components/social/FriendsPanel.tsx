@@ -135,21 +135,6 @@ export function FriendsPanel({
 
   const footer = showAddFriend ? (
     <form onSubmit={handleAddFriend} className="space-y-3 rounded-[1.5rem] border border-zinc-200 bg-zinc-50 p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-semibold text-zinc-900">Add friend</div>
-          <p className="mt-1 text-sm leading-6 text-zinc-600">
-            Enter their exact username and send the request in one step.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowAddFriend(false)}
-          className="rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500 transition hover:text-zinc-900"
-        >
-          Close
-        </button>
-      </div>
       <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
         <input
           ref={addInputRef}
@@ -192,7 +177,10 @@ export function FriendsPanel({
         surface="light"
         className={className}
       >
-        Friends
+        <svg className="h-4 w-4 sm:hidden" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 12c2.7 0 5-2.3 5-5s-2.3-5-5-5-5 2.3-5 5 2.3 5 5 5zm0 2c-3.3 0-10 1.7-10 5v1h20v-1c0-3.3-6.7-5-10-5z" />
+        </svg>
+        <span className="hidden sm:inline">Friends</span>
       </SocialHeaderButton>
 
       <SocialOverlay
@@ -202,27 +190,19 @@ export function FriendsPanel({
           setShowAddFriend(false);
         }}
         title="Friends"
-        eyebrow="Social"
-        subtitle="Keep your circle compact, scrollable, and one tap away from a new room."
         size="md"
         initialFocusRef={showAddFriend ? addInputRef : undefined}
         contentClassName="space-y-4"
         footer={footer}
       >
-        <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_48%,#0f766e_100%)] px-5 py-5 text-white">
-          <div className="flex items-start gap-4">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-sm font-black tracking-[0.2em] shadow-lg shadow-slate-950/20">
+        <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_48%,#0f766e_100%)] px-5 py-4 text-white">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-white/20 bg-white/15 text-sm font-black tracking-[0.2em]">
               {(user?.username?.[0] ?? "U").toUpperCase()}
             </div>
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-200">Official username</p>
-              <h3 className="mt-2 truncate font-display text-2xl font-black tracking-tight text-white">
-                @{user?.username ?? "player"}
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-sky-100/90">
-                Tap <span className="font-semibold">+</span> beside a friend to start or reuse a room. This is the only invite entry point.
-              </p>
-            </div>
+            <h3 className="truncate font-display text-xl font-black tracking-tight text-white">
+              @{user?.username ?? "player"}
+            </h3>
           </div>
         </section>
 
@@ -236,7 +216,6 @@ export function FriendsPanel({
           <div className="flex items-center justify-between border-b border-zinc-100 px-4 py-3">
             <div>
               <h3 className="text-sm font-semibold text-zinc-900">Your friends</h3>
-              <p className="mt-1 text-xs text-zinc-500">A few at a time, easy to scan, easy to act on.</p>
             </div>
             <div className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold text-zinc-500">
               {friendCount}
@@ -250,11 +229,8 @@ export function FriendsPanel({
               <div className="h-16 animate-pulse rounded-2xl bg-zinc-100" />
             </div>
           ) : friends.length === 0 ? (
-            <div className="px-5 py-12 text-center">
-              <div className="text-sm font-semibold text-zinc-900">No friends yet.</div>
-              <p className="mt-2 text-sm leading-6 text-zinc-500">
-                Add someone below, then use <span className="font-semibold">+</span> here when you want to invite them.
-              </p>
+            <div className="px-5 py-10 text-center text-sm text-zinc-400">
+              No friends yet
             </div>
           ) : (
             <div className="max-h-[min(22rem,58dvh)] overflow-y-auto px-3 py-3">
@@ -281,7 +257,7 @@ export function FriendsPanel({
                             ) : null}
                           </div>
                           <div className="mt-0.5 truncate text-xs text-zinc-500">
-                            @{friend.username} • Friends since {formatTimestamp(friend.since)}
+                            @{friend.username}
                           </div>
                         </div>
                       </div>

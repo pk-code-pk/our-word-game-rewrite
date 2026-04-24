@@ -2,7 +2,6 @@ import type {
   AlphabetState,
   AuthUser,
   GameStateView,
-  LeaderboardEntry,
   PresenceState,
   RecentGameSummary,
   SocialOverview,
@@ -190,6 +189,11 @@ export const api = {
     request<{ ok: true }>("/api/auth/signout", {
       method: "POST",
     }),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ ok: true }>("/api/auth/password", {
+      method: "PATCH",
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
   validateWord: (word: string, expectedLength?: 4 | 5) =>
     request<WordValidationResult>("/api/words/validate", {
       method: "POST",
@@ -244,7 +248,6 @@ export const api = {
       method: "POST",
       keepalive: options?.keepalive,
     }),
-  getLeaderboard: () => request<{ leaderboard: LeaderboardEntry[] }>("/api/leaderboard"),
   getSocialOverview: () => request<{ social: SocialOverview }>("/api/social"),
   searchUsers: (query: string) =>
     request<{ results: SocialSearchResult[] }>(

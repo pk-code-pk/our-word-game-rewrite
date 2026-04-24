@@ -29,6 +29,7 @@ import type {
   RecentGameSummary,
 } from "./types.js";
 import { getGamePresence, markPlayerOffline, touchPlayerPresence, upsertPlayerPresence } from "./presence.js";
+import { emitGameEvent } from "./gameEvents.js";
 
 const WAITING_GAME_LIMIT = 100;
 
@@ -498,6 +499,8 @@ export function joinGame(
       playerId,
     });
 
+    emitGameEvent({ type: "updated", gameId: game.id });
+
     return { gameId: game.id };
   }
 
@@ -507,7 +510,7 @@ export function joinGame(
     const createdAt = now();
     const playerId = uuid();
 
-    return db.transaction(async (tx) => {
+    const result = await db.transaction(async (tx) => {
       const reservedGame = (await tx
         .prepare(
           `SELECT id, status, created_at
@@ -530,6 +533,10 @@ export function joinGame(
         playerId,
       });
     })();
+
+    emitGameEvent({ type: "updated", gameId: result.gameId });
+
+    return result;
   })();
 }
 
@@ -1220,6 +1227,8 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       db.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
     }
 
+    emitGameEvent({ type: "updated", gameId });
+
     return {
       matchCount,
       isCorrect,
@@ -1299,6 +1308,8 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       }
     })();
 
+    emitGameEvent({ type: "updated", gameId });
+
     return {
       matchCount,
       isCorrect,
@@ -1330,6 +1341,7 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
     const alphabet = parseAlphabet(player.alphabet_json);
     alphabet[letter] = assertValidAlphabetState(state);
     db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
+    emitGameEvent({ type: "updated", gameId });
     return alphabet;
   }
 
@@ -1348,6 +1360,7 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
     const alphabet = parseAlphabet(player.alphabet_json);
     alphabet[letter] = assertValidAlphabetState(state);
     await db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
+    emitGameEvent({ type: "updated", gameId });
     return alphabet;
   })();
 }
@@ -1502,6 +1515,8 @@ export function cancelWaitingLobby(user: AuthUser, gameId: string): any {
     getPlayerInGameFrom(db, gameId, user.id);
     db.prepare(`DELETE FROM games WHERE id = ?`).run(gameId);
 
+    emitGameEvent({ type: "ended", gameId });
+
     return { cancelled: true as const };
   }
 
@@ -1521,6 +1536,8 @@ export function cancelWaitingLobby(user: AuthUser, gameId: string): any {
     await getPlayerInGameFrom(db, gameId, user.id);
     await db.prepare(`DELETE FROM games WHERE id = ?`).run(gameId);
 
+    emitGameEvent({ type: "ended", gameId });
+
     return { cancelled: true as const };
   })();
 }
@@ -1535,6 +1552,8 @@ export function markGamePresenceOffline(user: AuthUser, gameId: string): any {
       userId: user.id,
     });
 
+    emitGameEvent({ type: "updated", gameId });
+
     return { presence: "offline" as const };
   }
 
@@ -1545,6 +1564,8 @@ export function markGamePresenceOffline(user: AuthUser, gameId: string): any {
       gameId,
       userId: user.id,
     });
+
+    emitGameEvent({ type: "updated", gameId });
 
     return { presence: "offline" as const };
   })();

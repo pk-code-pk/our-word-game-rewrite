@@ -153,37 +153,19 @@ export function SocialInbox({
         surface="light"
         className={className}
       >
-        Inbox
+        <svg className="h-4 w-4 sm:hidden" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M20 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
+        </svg>
+        <span className="hidden sm:inline">Inbox</span>
       </SocialHeaderButton>
 
       <SocialOverlay
         open={open}
         onClose={() => setOpen(false)}
         title="Inbox"
-        eyebrow="Social"
-        subtitle="Your pending friend requests and game invites, kept in one compact queue."
         size="lg"
         contentClassName="space-y-4"
       >
-        <section className="overflow-hidden rounded-[1.5rem] bg-[linear-gradient(135deg,#111827_0%,#1d4ed8_52%,#0f766e_100%)] px-4 py-3 text-white sm:px-5 sm:py-5">
-          <div className="flex flex-col gap-2.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
-            <div className="min-w-0 max-w-2xl">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-sky-200">Incoming</p>
-              <h3 className="mt-1.5 font-display text-lg font-black tracking-tight sm:text-2xl">Invites waiting for you</h3>
-              <p className="mt-1.5 max-w-[34rem] text-sm leading-5 text-sky-100/90 sm:leading-6">
-                Accept with your saved username and the secret word you already chose.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2 sm:max-w-[12rem] sm:justify-end">
-              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold leading-none text-white/90 backdrop-blur">
-                @{joinHandle}
-              </span>
-              <span className="inline-flex items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold leading-none text-white/90 backdrop-blur">
-                {formatCount(unreadCount)} waiting
-              </span>
-            </div>
-          </div>
-        </section>
 
         {inboxQuery.error && social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
@@ -205,7 +187,7 @@ export function SocialInbox({
             <InboxSection
               title="Friend requests"
               count={sortedRequests.length}
-              emptyLabel="No incoming friend requests."
+              emptyLabel="None"
             >
               {sortedRequests.map((request) => (
                 <article
@@ -249,7 +231,7 @@ export function SocialInbox({
             <InboxSection
               title="Game invites"
               count={sortedInvites.length}
-              emptyLabel="No incoming game invites."
+              emptyLabel="None"
             >
               {sortedInvites.map((invite) => {
                 return (
@@ -260,7 +242,7 @@ export function SocialInbox({
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <div className="font-semibold text-zinc-900">
-                          {invite.sender.displayName} invited you to {invite.gameCode}
+                          {invite.sender.displayName}
                         </div>
                         <div className="mt-1 text-sm text-zinc-500">
                           @{invite.sender.username} • sent {formatTimestamp(invite.createdAt)}
@@ -271,15 +253,9 @@ export function SocialInbox({
                       </span>
                     </div>
 
-                    <div className="mt-4 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 py-4">
-                      <div className="text-xs font-semibold uppercase tracking-[0.2em] text-zinc-400">Joining as</div>
-                      <div className="mt-1 font-semibold text-zinc-900">@{joinHandle}</div>
-                      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="text-sm leading-6 text-zinc-500">
-                          This invite will use your saved secret word from the current session.
-                        </p>
-
-                        <div className="flex flex-wrap gap-2 sm:justify-end">
+                    <div className="mt-4 rounded-2xl border border-zinc-100 bg-zinc-50 px-4 py-3">
+                      <div className="text-xs text-zinc-400">Joining as <span className="font-semibold text-zinc-700">@{joinHandle}</span></div>
+                      <div className="mt-3 flex flex-wrap gap-2">
                           <button
                             type="button"
                             onClick={() => void handleInviteAction(invite, "accept")}
@@ -296,7 +272,6 @@ export function SocialInbox({
                           >
                             Decline
                           </button>
-                        </div>
                       </div>
                     </div>
                   </article>
@@ -324,10 +299,7 @@ function InboxSection({
   return (
     <section className="rounded-3xl border border-zinc-200 bg-white/90 p-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="font-semibold text-zinc-900">{title}</h3>
-          <p className="mt-1 text-sm text-zinc-500">A compact queue so nothing gets buried.</p>
-        </div>
+        <h3 className="font-semibold text-zinc-900">{title}</h3>
         <span className="rounded-full bg-zinc-100 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">
           {count}
         </span>

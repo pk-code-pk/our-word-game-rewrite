@@ -1,6 +1,7 @@
 import cookieParser from "cookie-parser";
 import express from "express";
 import {
+  changePassword,
   clearSession,
   cleanupExpiredSessions,
   createSession,
@@ -116,7 +117,7 @@ export function createApp() {
         provider: databaseProvider,
         ...(isProduction() ? {} : { file: databaseFile }),
       },
-      realtime: "polling",
+      realtime: "websocket",
       dictionary: getWordBankStats(),
     });
   });
@@ -171,6 +172,16 @@ export function createApp() {
   app.post("/api/auth/signout", async (req, res) => {
     await clearSession(req, res);
     res.json({ ok: true });
+  });
+
+  app.patch("/api/auth/password", async (req, res) => {
+    try {
+      const user = await requireUser(req);
+      await changePassword(user.id, req.body.currentPassword ?? "", req.body.newPassword ?? "");
+      res.json({ ok: true });
+    } catch (error) {
+      res.status(400).json({ error: error instanceof Error ? error.message : "Could not change password." });
+    }
   });
 
   app.post("/api/words/validate", (req, res) => {

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "npm-run-all --parallel dev:frontend dev:backend",
     "dev:frontend": "vite --open",
-    "dev:backend": "tsx watch server/index.ts",
+    "dev:backend": "PORT=3002 tsx watch server/index.ts",
     "generate:wordbank": "node scripts/generate-wordbank.mjs",
     "typecheck": "tsc -p tsconfig.server.json --noEmit --pretty false && tsc -p . --noEmit --pretty false",
     "build": "vite build",
@@ -30,7 +30,8 @@
     "sonner": "^2.0.3",
     "tailwind-merge": "^3.1.0",
     "tsx": "^4.21.0",
-    "uuid": "^13.0.0"
+    "uuid": "^13.0.0",
+    "ws": "^8.20.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.21.0",
@@ -38,6 +39,7 @@
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "~10",
     "dotenv": "^16.4.7",

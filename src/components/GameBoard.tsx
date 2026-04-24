@@ -5,7 +5,7 @@ import { AlphabetBoard } from "./AlphabetBoard";
 import { PresenceBadge } from "./PresenceBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
-import { usePollingQuery } from "../lib/usePollingQuery";
+import { useGameSocket } from "../lib/useGameSocket";
 
 interface GameBoardProps {
   gameId: string;
@@ -14,7 +14,7 @@ interface GameBoardProps {
 
 export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const { user } = useAuth();
-  const gameStateQuery = usePollingQuery(() => api.getGameState(gameId), [gameId], { intervalMs: 1500 });
+  const gameStateQuery = useGameSocket(gameId);
   const gameState = gameStateQuery.data?.gameState;
   const [guessText, setGuessText] = useState("");
   const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
@@ -213,10 +213,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-100 text-2xl">
           !
         </div>
-        <h2 className="text-2xl font-black tracking-tight text-zinc-900">This game is no longer available</h2>
-        <p className="mt-3 text-sm leading-6 text-zinc-600">
-          It may have expired, been cleaned up, or your session no longer has access to it.
-        </p>
+        <h2 className="text-2xl font-black tracking-tight text-zinc-900">Game not available</h2>
         <button
           onClick={onExitToMenu}
           className="mt-6 inline-flex items-center justify-center rounded-lg bg-zinc-900 px-6 py-3 font-semibold text-white shadow-sm transition hover:bg-zinc-800"
@@ -260,50 +257,21 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-            Connection is a little shaky right now, but the board will keep retrying in the background.
+            Connection issue — retrying...
           </div>
         )}
 
         {isWaitingForOpponent && (
-          <div className="space-y-4 rounded-lg border border-zinc-200 bg-zinc-50 p-4">
-            <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center shadow-sm">
-              <div className="animate-pulse text-base font-medium text-zinc-600">Waiting for opponent to join...</div>
-              <div className="mt-3 text-sm text-zinc-500">
-                Game code{" "}
-                <span className="font-mono font-semibold tracking-widest text-zinc-700">{gameState.game.code}</span>
-              </div>
-            </div>
-
-            {!user?.isAnonymous && (
-              <div className="rounded-lg border border-zinc-200 bg-white px-4 py-3 text-sm leading-6 text-zinc-600">
-                Use the <span className="font-semibold text-zinc-900">Friends</span> button above to invite someone
-                into this waiting room without leaving the board.
-              </div>
-            )}
-
-            {user?.isAnonymous && (
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
-                Friend invites are available on saved accounts. Create an account to invite friends
-                directly into this lobby.
-              </div>
-            )}
+          <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center shadow-sm">
+            <div className="animate-pulse text-base font-medium text-zinc-600">Waiting for opponent...</div>
+            <div className="mt-2 font-mono text-sm font-semibold tracking-widest text-zinc-500">{gameState.game.code}</div>
           </div>
         )}
 
         {opponent && (
-          <div className="flex flex-wrap gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-2.5">
-            <PresenceBadge
-              status={presence.me}
-              label={presence.me === "online" ? "You online" : "You offline"}
-            />
-            <PresenceBadge
-              status={presence.opponent}
-              label={
-                presence.opponent === "online"
-                  ? `${opponent.username} online`
-                  : `${opponent.username} offline`
-              }
-            />
+          <div className="flex gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
+            <PresenceBadge status={presence.me} label="You" />
+            <PresenceBadge status={presence.opponent} label={opponent.username} />
           </div>
         )}
 
@@ -329,21 +297,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
 
         {opponent && (
-          <div className="space-y-5">
-            <section className="overflow-hidden rounded-xl border border-zinc-200 bg-emerald-50 p-5 shadow-sm">
-              <div className="flex items-end justify-between gap-4">
-                <div className="min-w-0">
-                  <p className="text-lg font-semibold tracking-tight text-emerald-950">
-                    {opponent.username} has found {opponentFoundLetterCount ?? "—"} of your letters
-                  </p>
-                  {opponentFoundLetterCount === null ? (
-                    <p className="mt-1 text-sm text-emerald-900/70">Waiting for their board to sync.</p>
-                  ) : null}
-                </div>
-                <span className="font-mono text-4xl font-black tracking-tight text-emerald-700">
-                  {opponentFoundLetterCount ?? "—"}
-                </span>
-              </div>
+          <div className="space-y-3 lg:space-y-5">
+            <section className="flex items-center justify-between rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
+              <p className="text-sm font-medium text-emerald-900">{opponent.username} found</p>
+              <span className="font-mono text-3xl font-black text-emerald-700">{opponentFoundLetterCount ?? "—"}</span>
             </section>
 
             <section>
@@ -359,76 +316,59 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               />
             </section>
 
+            {/* Alphabet — visible inline on mobile, hidden (sidebar handles it) on desktop */}
+            <div className="lg:hidden">
+              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+            </div>
+
             {isGameActive && (
               <form
                 ref={guessFormRef}
                 onSubmit={handleSubmitGuess}
-                className="space-y-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 sm:p-5"
+                className="space-y-2.5 rounded-xl border border-zinc-200 bg-zinc-50 p-3"
               >
-                <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px] md:items-end">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-zinc-700">Your guess</label>
-                    <input
-                      ref={guessInputRef}
-                      type="text"
-                      value={guessText}
-                      onChange={(e) => setGuessText(e.target.value.toUpperCase())}
-                      placeholder={guessType === "fourLetter" ? "Enter 4-letter word" : "Enter 5-letter word"}
-                      maxLength={guessType === "fourLetter" ? 4 : 5}
-                      autoCapitalize="characters"
-                      spellCheck={false}
-                      className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
+                <input
+                  ref={guessInputRef}
+                  type="text"
+                  value={guessText}
+                  onChange={(e) => setGuessText(e.target.value.toUpperCase())}
+                  placeholder={guessType === "fourLetter" ? "4-letter word" : "5-letter word"}
+                  maxLength={guessType === "fourLetter" ? 4 : 5}
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
+                  disabled={isSubmitting}
+                  onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
+                />
+                <div className="flex items-center gap-2">
+                  <div className="grid flex-1 grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setGuessType("fourLetter")}
                       disabled={isSubmitting}
-                      onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
-                    />
+                      className={`inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                        guessType === "fourLetter"
+                          ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                          : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                      }`}
+                      aria-pressed={guessType === "fourLetter"}
+                    >
+                      4 letters
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setGuessType("fullWord")}
+                      disabled={isSubmitting}
+                      className={`inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                        guessType === "fullWord"
+                          ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                          : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                      }`}
+                      aria-pressed={guessType === "fullWord"}
+                    >
+                      Full word
+                    </button>
                   </div>
-
-                  <div>
-                    <span className="mb-2 block text-sm font-medium text-zinc-700">Guess type</span>
-                    <div className="grid grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setGuessType("fourLetter")}
-                        disabled={isSubmitting}
-                        className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                          guessType === "fourLetter"
-                            ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
-                            : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
-                        }`}
-                        aria-pressed={guessType === "fourLetter"}
-                      >
-                        <span
-                          className={`h-2.5 w-2.5 rounded-full border ${
-                            guessType === "fourLetter" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
-                          }`}
-                          aria-hidden="true"
-                        />
-                        4 letters
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setGuessType("fullWord")}
-                        disabled={isSubmitting}
-                        className={`inline-flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                          guessType === "fullWord"
-                            ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
-                            : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
-                        }`}
-                        aria-pressed={guessType === "fullWord"}
-                      >
-                        <span
-                          className={`h-2.5 w-2.5 rounded-full border ${
-                            guessType === "fullWord" ? "border-zinc-900 bg-zinc-900" : "border-zinc-400 bg-transparent"
-                          }`}
-                          aria-hidden="true"
-                        />
-                        Full word
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
                   <button
                     type="submit"
                     disabled={
@@ -437,9 +377,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       (guessType === "fourLetter" && guessText.length !== 4) ||
                       (guessType === "fullWord" && guessText.length !== 5)
                     }
-                    className="inline-flex w-full items-center justify-center rounded-lg bg-zinc-900 px-5 py-2.5 font-semibold text-white transition hover:bg-zinc-800 disabled:opacity-40 sm:w-auto"
+                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 disabled:opacity-40"
+                    aria-label="Submit guess"
                   >
-                    {isSubmitting ? "Submitting..." : "Submit guess"}
+                    {isSubmitting ? "…" : "↑"}
                   </button>
                 </div>
               </form>
@@ -459,7 +400,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
       </div>
 
-      <div className="min-w-0 lg:sticky lg:top-16 lg:self-start">
+      <div className="min-w-0 lg:sticky lg:top-16 lg:self-start hidden lg:block">
         <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
       </div>
     </div>
@@ -481,7 +422,7 @@ function GuessColumn(props: {
   onScroll: React.UIEventHandler<HTMLDivElement>;
 }) {
   return (
-    <div className="flex min-h-[18rem] min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-4 shadow-sm sm:p-5">
+    <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
       <div className="mb-3">
         <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
       </div>
@@ -489,7 +430,7 @@ function GuessColumn(props: {
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="h-[min(15rem,34dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(17rem,38dvh)] lg:h-64"
+        className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(10rem,20dvh)]"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {props.guesses.length === 0 ? (

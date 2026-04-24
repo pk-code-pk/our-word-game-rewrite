@@ -197,8 +197,7 @@ export function clearSession(req: Request, res: Response): MaybePromise<void> {
   });
 }
 
-export function getUserFromRequest(req: Request): MaybePromise<AuthUser | null> {
-  const sessionId = req.cookies?.[SESSION_COOKIE];
+export function getUserFromSessionId(sessionId: string | null | undefined): MaybePromise<AuthUser | null> {
   if (!sessionId) {
     return null;
   }
@@ -220,6 +219,25 @@ export function getUserFromRequest(req: Request): MaybePromise<AuthUser | null> 
       return flatMapMaybePromise(db.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId), () => null);
     });
   });
+}
+
+export function getUserFromRequest(req: Request): MaybePromise<AuthUser | null> {
+  return getUserFromSessionId(req.cookies?.[SESSION_COOKIE]);
+}
+
+export function parseSessionIdFromCookieHeader(cookieHeader: string | undefined): string | null {
+  if (!cookieHeader) {
+    return null;
+  }
+
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (rawName === SESSION_COOKIE && rawValue.length > 0) {
+      return decodeURIComponent(rawValue.join("="));
+    }
+  }
+
+  return null;
 }
 
 export function getLoggedInUser(user: AuthUser | null): AuthUser | null {
@@ -287,6 +305,24 @@ export function signIn(identifier: string, password: string): MaybePromise<strin
 
     return user.id;
   });
+}
+
+export function changePassword(userId: string, currentPassword: string, newPassword: string): void {
+  assertValidPassword(newPassword);
+
+  const row = db
+    .prepare(`SELECT password_hash FROM users WHERE id = ?`)
+    .get(userId) as { password_hash: string | null } | undefined;
+
+  if (!row?.password_hash) {
+    throw new Error("Password changes are not supported for this account type.");
+  }
+
+  if (!bcrypt.compareSync(currentPassword, row.password_hash)) {
+    throw new Error("Current password is incorrect.");
+  }
+
+  db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(bcrypt.hashSync(newPassword, 10), userId);
 }
 
 export function signInAnonymously(): MaybePromise<string> {

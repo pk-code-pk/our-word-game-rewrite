@@ -2,10 +2,8 @@ import { Toaster } from "sonner";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
-import { SecretWordSetup } from "./components/SecretWordSetup";
 import { GameLobby } from "./components/GameLobby";
 import { GameBoard } from "./components/GameBoard";
-import { Leaderboard } from "./components/Leaderboard";
 import { RecentGamesPanel } from "./components/RecentGamesPanel";
 import { ScreenErrorBoundary } from "./components/ScreenErrorBoundary";
 import { FriendsPanel } from "./components/social/FriendsPanel";
@@ -18,7 +16,6 @@ import {
   clearActiveGame,
   createDefaultPlayState,
   readStoredPlayState,
-  resetPlayState,
   writeStoredPlayState,
   type PlayState,
 } from "./lib/playState";
@@ -30,96 +27,20 @@ function isRecoverableInviteLobbyError(message: string) {
 
 export default function App() {
   const { user } = useAuth();
-  const [currentView, setCurrentView] = useState<"game" | "leaderboard">("game");
 
   return (
     <div className="min-h-[100dvh] overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
-      <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
-        <div className="mx-auto grid w-full max-w-5xl grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-3 sm:px-4 md:grid-cols-[auto_minmax(0,1fr)_auto] md:px-6">
-          <div className="min-w-0">
-            <h1 className="truncate text-lg font-display font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
-          </div>
-          <div className="justify-self-end">
-            <SignOutButton />
-          </div>
-          <div className="col-span-2 md:col-span-1 md:justify-self-end">
-            <Nav currentView={currentView} onChange={setCurrentView} />
-          </div>
-        </div>
-      </header>
-
-      <main className="flex-1 px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8 lg:py-8">
-        <div className="mx-auto w-full max-w-5xl">
-          <ScreenErrorBoundary resetKey={`${user?.id ?? "anonymous"}:${currentView}`}>
-            {user?.isAnonymous ? (
-              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
-                <strong>Guest mode.</strong> Sign out if you want a saved account and friends.
-              </div>
-            ) : null}
-            {currentView === "game" ? <Content key={user?.id ?? "anonymous"} /> : <Leaderboard />}
-          </ScreenErrorBoundary>
-        </div>
-      </main>
-
+      <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
+        <Content key={user?.id ?? "anonymous"} />
+      </ScreenErrorBoundary>
       <Toaster />
-    </div>
-  );
-}
-
-function Nav(props: {
-  currentView: "game" | "leaderboard";
-  onChange: (view: "game" | "leaderboard") => void;
-}) {
-  const { isAuthenticated } = useAuth();
-
-  if (!isAuthenticated) {
-    return null;
-  }
-
-  return (
-    <div className="flex w-full items-center">
-      <nav className="grid w-full grid-cols-2 items-center rounded-xl border border-zinc-700 bg-zinc-900/90 p-1 shadow-sm md:w-auto md:min-w-[15rem]">
-        <button
-          type="button"
-          onClick={() => props.onChange("game")}
-          className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${
-            props.currentView === "game"
-              ? "border-zinc-700 bg-zinc-800 text-white"
-              : "border-transparent text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
-          }`}
-          aria-pressed={props.currentView === "game"}
-        >
-          <span
-            className={`h-2.5 w-2.5 rounded-full border transition ${
-              props.currentView === "game" ? "border-white bg-white" : "border-zinc-500 bg-transparent"
-            }`}
-          />
-          Play
-        </button>
-        <button
-          type="button"
-          onClick={() => props.onChange("leaderboard")}
-          className={`flex min-h-10 items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all ${
-            props.currentView === "leaderboard"
-              ? "border-zinc-700 bg-zinc-800 text-white"
-              : "border-transparent text-zinc-200 hover:border-zinc-700 hover:bg-zinc-800/70 hover:text-white"
-          }`}
-          aria-pressed={props.currentView === "leaderboard"}
-        >
-          <span
-            className={`h-2.5 w-2.5 rounded-full border transition ${
-              props.currentView === "leaderboard" ? "border-white bg-white" : "border-zinc-500 bg-transparent"
-            }`}
-          />
-          Scores
-        </button>
-      </nav>
     </div>
   );
 }
 
 function Content() {
   const { user, loading, isAuthenticated } = useAuth();
+
   const recentGamesQuery = usePollingQuery(() => api.getPlayerGames(), [user?.id], {
     enabled: isAuthenticated,
     intervalMs: 5000,
@@ -138,30 +59,10 @@ function Content() {
     if (typeof window === "undefined" || !user?.id) {
       return;
     }
-
     writeStoredPlayState(user.id, playState);
   }, [playState, user?.id]);
 
   const { username, secretWord, currentGameId, gamePhase, lobbyCode: gameCode, isPublic } = playState;
-
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-6">
-          <div className="space-y-3">
-            <div className="h-4 w-28 animate-pulse rounded bg-zinc-100" />
-            <div className="h-8 w-full max-w-sm animate-pulse rounded bg-zinc-100" />
-          </div>
-          <div className="mt-5 grid gap-3 sm:grid-cols-3">
-            <div className="h-16 animate-pulse rounded-lg bg-zinc-50" />
-            <div className="h-16 animate-pulse rounded-lg bg-zinc-50" />
-            <div className="h-16 animate-pulse rounded-lg bg-zinc-50" />
-          </div>
-        </div>
-        <div className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white" />
-      </div>
-    );
-  }
 
   const recentGames = recentGamesQuery.data?.games ?? [];
   const reusableWaitingGame = recentGames.find((game) => game.status === "waiting" && !game.isExpired) ?? null;
@@ -189,7 +90,6 @@ function Content() {
         if (!isRecoverableInviteLobbyError(message)) {
           throw error instanceof Error ? error : new Error(message);
         }
-
         setPlayState((prev) => clearActiveGame(prev));
       }
     }
@@ -220,7 +120,6 @@ function Content() {
           if (!isRecoverableInviteLobbyError(message)) {
             throw error instanceof Error ? error : new Error(message);
           }
-
           setPlayState((prev) => clearActiveGame(prev));
         }
       }
@@ -230,123 +129,119 @@ function Content() {
         secretWord,
         public: false,
       });
-      await api.sendGameInvite(createdGame.gameId, friend.userId);
-      toast.success(`Room ${createdGame.code} created and invite sent to ${friend.displayName}.`);
-      setPlayState((prev) => ({ ...prev, currentGameId: createdGame.gameId, gamePhase: "playing", lobbyCode: "" }));
+      const created = createdGame;
+      await api.sendGameInvite(created.gameId, friend.userId);
+      toast.success(`Room ${created.code} created and invite sent to ${friend.displayName}.`);
+      setPlayState((prev) => ({ ...prev, currentGameId: created.gameId, gamePhase: "playing", lobbyCode: "" }));
     } catch (error) {
       if (createdGame) {
-        setPlayState((prev) => ({ ...prev, currentGameId: createdGame.gameId, gamePhase: "playing", lobbyCode: "" }));
+        const created = createdGame;
+        setPlayState((prev) => ({ ...prev, currentGameId: created.gameId, gamePhase: "playing", lobbyCode: "" }));
         throw error instanceof Error
           ? new Error(`${error.message} Your room was still created, so you can invite again from there.`)
           : new Error("Your room was created, but the invite could not be sent.");
       }
-
       throw error instanceof Error ? error : new Error("Unable to create the room right now.");
     }
   }
 
-  const socialToolbar =
-    isAuthenticated && !user?.isAnonymous ? (
-      <div className="rounded-2xl border border-zinc-200 bg-white/90 p-3 shadow-sm sm:p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-[0.22em] text-zinc-400">Social</p>
-            <p className="mt-1 text-sm text-zinc-600">
-              Keep friends and invites tucked away here so the main game flow stays clean.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <FriendsPanel
-              onQuickInvite={handleQuickInvite}
-              refreshKey={socialRefreshKey}
-              onSocialMutated={refreshSocialData}
-            />
-            <SocialInbox
-              secretWord={secretWord}
-              displayName={username}
-              refreshKey={socialRefreshKey}
-              onSocialMutated={refreshSocialData}
-              onOpenGame={(gameId) => {
-                setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
-              }}
-            />
-          </div>
-        </div>
-      </div>
-    ) : null;
-
-  if (gamePhase === "playing" && currentGameId) {
-    return (
-      <div className="space-y-4">
-        {socialToolbar}
-        <GameBoard
-          key={currentGameId}
-          gameId={currentGameId}
-          onExitToMenu={() => {
-            setPlayState((prev) => clearActiveGame(prev));
-          }}
-        />
-      </div>
-    );
-  }
+  const canUseSocial = isAuthenticated && !user?.isAnonymous;
 
   return (
-    <div className="space-y-6">
-      {!isAuthenticated ? (
-        <div className="mx-auto max-w-xl">
-          <SignInForm />
-        </div>
-      ) : (
-        <>
-          {socialToolbar}
+    <>
+      <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
+          <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
 
-          <RecentGamesPanel
-            games={recentGames}
-            onOpenGame={(gameId) => {
-              setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
-            }}
-          />
+          <div className="ml-auto flex shrink-0 items-center gap-1">
+            {canUseSocial && (
+              <FriendsPanel
+                onQuickInvite={handleQuickInvite}
+                refreshKey={socialRefreshKey}
+                onSocialMutated={refreshSocialData}
+              />
+            )}
+            {canUseSocial && (
+              <SocialInbox
+                secretWord={secretWord}
+                displayName={username}
+                refreshKey={socialRefreshKey}
+                onSocialMutated={refreshSocialData}
+                onOpenGame={(gameId) => {
+                  setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
+                }}
+              />
+            )}
+            <SignOutButton />
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-5xl">
           {user?.isAnonymous ? (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-              Friend requests and direct invites are available on saved accounts. Sign out to create an account when you're ready.
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
+              <strong>Guest mode.</strong> Sign out if you want a saved account and friends.
             </div>
           ) : null}
 
-          {recentGamesQuery.error && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              We had trouble refreshing your recent games, but the page will keep trying in the background.
-            </div>
-          )}
+          <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
+            {loading ? (
+              <div className="space-y-4">
+                <div className="h-12 animate-pulse rounded-xl border border-zinc-200 bg-white" />
+                <div className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white" />
+              </div>
+            ) : !isAuthenticated ? (
+              <div className="mx-auto max-w-xl">
+                <SignInForm />
+              </div>
+            ) : gamePhase === "playing" && currentGameId ? (
+              <GameBoard
+                key={currentGameId}
+                gameId={currentGameId}
+                onExitToMenu={() => setPlayState((prev) => clearActiveGame(prev))}
+              />
+            ) : (
+              <div className="space-y-6">
+                <RecentGamesPanel
+                  games={recentGames}
+                  onOpenGame={(gameId) => {
+                    setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
+                  }}
+                />
 
-          {gamePhase === "setup" && (
-            <SecretWordSetup
-              secretWord={secretWord}
-              onSecretWordChange={(word) => setPlayState((prev) => ({ ...prev, secretWord: word }))}
-              onSecretWordSet={(word) => {
-                setPlayState((prev) => ({ ...prev, secretWord: word, currentGameId: "", gamePhase: "lobby" }));
-              }}
-            />
-          )}
+                {user?.isAnonymous ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                    Friend requests and direct invites are available on saved accounts.
+                  </div>
+                ) : null}
 
-          {gamePhase === "lobby" && (
-            <GameLobby
-              secretWord={secretWord}
-              username={username}
-              onUsernameChange={(value) => setPlayState((prev) => ({ ...prev, username: value }))}
-              gameCode={gameCode}
-              onGameCodeChange={(value) => setPlayState((prev) => ({ ...prev, lobbyCode: value }))}
-              isPublic={isPublic}
-              onIsPublicChange={(value) => setPlayState((prev) => ({ ...prev, isPublic: value }))}
-              onGameStart={(gameId) => {
-                setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
-              }}
-              onBackToSetup={() => {
-                setPlayState((prev) => resetPlayState(prev));
-              }}
-            />
-          )}
-        </>
-      )}
-    </div>
+                {recentGamesQuery.error && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    Trouble refreshing recent games — retrying in the background.
+                  </div>
+                )}
+
+                {(gamePhase === "setup" || gamePhase === "lobby") && (
+                  <GameLobby
+                    secretWord={secretWord}
+                    onSecretWordChange={(word) => setPlayState((prev) => ({ ...prev, secretWord: word }))}
+                    username={username}
+                    onUsernameChange={(value) => setPlayState((prev) => ({ ...prev, username: value }))}
+                    gameCode={gameCode}
+                    onGameCodeChange={(value) => setPlayState((prev) => ({ ...prev, lobbyCode: value }))}
+                    isPublic={isPublic}
+                    onIsPublicChange={(value) => setPlayState((prev) => ({ ...prev, isPublic: value }))}
+                    onGameStart={(gameId) => {
+                      setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
+                    }}
+                  />
+                )}
+              </div>
+            )}
+          </ScreenErrorBoundary>
+        </div>
+      </main>
+    </>
   );
 }

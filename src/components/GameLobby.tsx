@@ -5,6 +5,7 @@ import { usePollingQuery } from "../lib/usePollingQuery";
 
 interface GameLobbyProps {
   secretWord: string;
+  onSecretWordChange: (word: string) => void;
   username: string;
   onUsernameChange: (username: string) => void;
   gameCode: string;
@@ -12,11 +13,13 @@ interface GameLobbyProps {
   isPublic: boolean;
   onIsPublicChange: (isPublic: boolean) => void;
   onGameStart: (gameId: string) => void;
-  onBackToSetup: () => void;
 }
+
+type WordStatus = "idle" | "checking" | "valid" | "invalid";
 
 export function GameLobby({
   secretWord,
+  onSecretWordChange,
   username,
   onUsernameChange,
   gameCode,
@@ -24,11 +27,14 @@ export function GameLobby({
   isPublic,
   onIsPublicChange,
   onGameStart,
-  onBackToSetup,
 }: GameLobbyProps) {
   const [isCreating, setIsCreating] = useState(false);
   const [isJoining, setIsJoining] = useState(false);
   const [joiningPublicCode, setJoiningPublicCode] = useState<string | null>(null);
+  const [wordStatus, setWordStatus] = useState<WordStatus>(() =>
+    secretWord.length === 5 ? "valid" : "idle"
+  );
+  const [wordError, setWordError] = useState("");
 
   const publicLobbyQuery = usePollingQuery(() => api.listPublicLobbies(), [], { intervalMs: 3000 });
   const publicLobbyData = publicLobbyQuery.data;
@@ -37,11 +43,52 @@ export function GameLobby({
   const waitingPublicCount = publicLobbyData?.waitingPublicCount ?? 0;
   const hasUsername = Boolean(username.trim());
 
+  const validateWord = async (word: string): Promise<boolean> => {
+    if (word.length !== 5) {
+      setWordStatus("invalid");
+      setWordError("Must be exactly 5 letters");
+      return false;
+    }
+    if (new Set(word).size !== word.length) {
+      setWordStatus("invalid");
+      setWordError("No duplicate letters");
+      return false;
+    }
+    setWordStatus("checking");
+    try {
+      const result = await api.validateWord(word, 5);
+      if (!result.valid) {
+        setWordStatus("invalid");
+        setWordError(result.reason || "Not a valid word");
+        return false;
+      }
+      setWordStatus("valid");
+      setWordError("");
+      return true;
+    } catch {
+      setWordStatus("invalid");
+      setWordError("Could not validate");
+      return false;
+    }
+  };
+
+  const handleWordBlur = async () => {
+    const word = secretWord.trim();
+    if (!word || wordStatus === "valid") return;
+    await validateWord(word);
+  };
+
+  const ensureValidWord = async (): Promise<boolean> => {
+    if (wordStatus === "valid") return true;
+    return validateWord(secretWord.trim());
+  };
+
   const handleCreateGame = async () => {
     if (!hasUsername) {
-      toast.error("Please enter a username");
+      toast.error("Enter a display name");
       return;
     }
+    if (!(await ensureValidWord())) return;
 
     setIsCreating(true);
     try {
@@ -50,8 +97,7 @@ export function GameLobby({
         secretWord,
         public: isPublic,
       });
-      toast.success(isPublic ? "Public lobby created! Waiting for an opponent." : `Game created! Share code: ${result.code}`);
-
+      toast.success(isPublic ? "Waiting for an opponent..." : `Share code: ${result.code}`);
       setIsCreating(false);
       onGameStart(result.gameId);
     } catch (error) {
@@ -62,13 +108,14 @@ export function GameLobby({
 
   const handleJoinGame = async () => {
     if (!hasUsername) {
-      toast.error("Please enter a username");
+      toast.error("Enter a display name");
       return;
     }
     if (!gameCode.trim()) {
-      toast.error("Please enter a game code");
+      toast.error("Enter a game code");
       return;
     }
+    if (!(await ensureValidWord())) return;
 
     setIsJoining(true);
     try {
@@ -77,7 +124,7 @@ export function GameLobby({
         username: username.trim(),
         secretWord,
       });
-      toast.success("Joined game successfully!");
+      toast.success("Joined!");
       setIsJoining(false);
       onGameStart(result.gameId);
     } catch (error) {
@@ -88,9 +135,10 @@ export function GameLobby({
 
   const handleJoinPublicGame = async (code: string) => {
     if (!hasUsername) {
-      toast.error("Please enter a username");
+      toast.error("Enter a display name");
       return;
     }
+    if (!(await ensureValidWord())) return;
 
     setJoiningPublicCode(code);
     try {
@@ -99,7 +147,7 @@ export function GameLobby({
         username: username.trim(),
         secretWord,
       });
-      toast.success("Joined game successfully!");
+      toast.success("Joined!");
       setJoiningPublicCode(null);
       onGameStart(result.gameId);
     } catch (error) {
@@ -111,27 +159,9 @@ export function GameLobby({
   return (
     <section className="mx-auto max-w-2xl">
       <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-        {/* Header */}
-        <div className="border-b border-zinc-100 px-6 py-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-widest text-zinc-400">Step 2 of 2</p>
-              <h2 className="mt-1.5 font-display text-2xl font-bold tracking-tight text-zinc-900">Set up your match</h2>
-            </div>
-            <button
-              onClick={onBackToSetup}
-              className="shrink-0 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
-            >
-              ← Change word
-            </button>
-          </div>
-
-          {/* Stats row */}
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-emerald-700">Your word</p>
-              <p className="mt-1 font-mono text-xl font-black tracking-[0.25em] text-emerald-900">{secretWord}</p>
-            </div>
+        {/* Stats */}
+        <div className="border-b border-zinc-100 px-6 py-4">
+          <div className="grid grid-cols-2 gap-3">
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-zinc-500">Live now</p>
               <p className="mt-1 text-2xl font-black text-zinc-900">{activeGamesCount}</p>
@@ -143,8 +173,38 @@ export function GameLobby({
           </div>
         </div>
 
-        <div className="px-6 py-6 space-y-6">
-          {/* Username */}
+        <div className="space-y-5 px-6 py-6">
+          {/* Secret word */}
+          <div>
+            <label htmlFor="lobby-secret-word" className="mb-1.5 block text-sm font-medium text-zinc-700">
+              Secret word
+            </label>
+            <input
+              id="lobby-secret-word"
+              type="text"
+              value={secretWord}
+              onChange={(e) => {
+                onSecretWordChange(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 5));
+                setWordStatus("idle");
+                setWordError("");
+              }}
+              onBlur={handleWordBlur}
+              placeholder="_ _ _ _ _"
+              maxLength={5}
+              autoCapitalize="characters"
+              spellCheck={false}
+              disabled={wordStatus === "checking"}
+              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 font-mono text-2xl font-bold tracking-[0.35em] text-center text-zinc-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
+            />
+            <div className="mt-1.5 flex items-center justify-between text-xs">
+              <span className="text-zinc-400">5 letters · no repeats · real word</span>
+              {wordStatus === "checking" && <span className="text-zinc-400">Checking...</span>}
+              {wordStatus === "valid" && <span className="font-medium text-emerald-600">✓ Valid</span>}
+              {wordStatus === "invalid" && <span className="font-medium text-rose-500">{wordError}</span>}
+            </div>
+          </div>
+
+          {/* Display name */}
           <div>
             <label htmlFor="lobby-display-name" className="mb-1.5 block text-sm font-medium text-zinc-700">
               Display name
@@ -154,7 +214,7 @@ export function GameLobby({
               type="text"
               value={username}
               onChange={(e) => onUsernameChange(e.target.value)}
-              placeholder="Enter your username"
+              placeholder="Your username"
               maxLength={20}
               autoComplete="nickname"
               className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-[16px] text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
@@ -165,7 +225,7 @@ export function GameLobby({
           <div className="grid gap-4 sm:grid-cols-2">
             {/* Create */}
             <div className="rounded-lg border border-zinc-200 p-4">
-              <h3 className="font-semibold text-zinc-900">Create game</h3>
+              <h3 className="font-semibold text-zinc-900">Create</h3>
               <div className="mt-3 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1">
                 <button
                   type="button"
@@ -207,14 +267,11 @@ export function GameLobby({
               <button
                 type="button"
                 onClick={handleCreateGame}
-                disabled={!hasUsername || isCreating}
+                disabled={!hasUsername || isCreating || wordStatus === "checking"}
                 className="mt-4 w-full rounded-lg bg-zinc-900 py-2.5 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isCreating ? "Creating..." : "Create Game"}
               </button>
-              <p className="mt-2 text-xs leading-5 text-zinc-500">
-                Create the room first, then use the Friends drawer above to invite someone with the + button.
-              </p>
             </div>
 
             {/* Join */}
@@ -235,7 +292,7 @@ export function GameLobby({
               <button
                 type="button"
                 onClick={handleJoinGame}
-                disabled={!hasUsername || !gameCode.trim() || isJoining}
+                disabled={!hasUsername || !gameCode.trim() || isJoining || wordStatus === "checking"}
                 className="mt-4 w-full rounded-lg border border-zinc-900 bg-white py-2.5 font-semibold text-zinc-900 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isJoining ? "Joining..." : "Join Game"}
@@ -245,15 +302,17 @@ export function GameLobby({
 
           {publicLobbyQuery.error && (
             <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-              Trouble loading public lobbies — you can still create or join directly.
+              Trouble loading public lobbies.
             </div>
           )}
 
           {/* Public lobbies */}
           <div>
-            <div className="flex items-center justify-between mb-3">
+            <div className="mb-3 flex items-center justify-between">
               <h3 className="font-semibold text-zinc-900">Public lobbies</h3>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-500">{openLobbies.length}</span>
+              <span className="rounded-full bg-zinc-100 px-2.5 py-0.5 text-xs font-semibold text-zinc-500">
+                {openLobbies.length}
+              </span>
             </div>
 
             {publicLobbyQuery.loading && !publicLobbyData && (
@@ -265,7 +324,7 @@ export function GameLobby({
 
             {publicLobbyData && openLobbies.length === 0 && (
               <div className="rounded-lg border border-dashed border-zinc-200 px-4 py-5 text-center text-sm text-zinc-400">
-                No public lobbies right now. Create one to appear here.
+                No open lobbies
               </div>
             )}
 
@@ -274,20 +333,21 @@ export function GameLobby({
                 {openLobbies.map((lobby) => (
                   <li
                     key={lobby.code}
-                    className="flex flex-col gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                    className="flex items-center justify-between gap-3 rounded-lg border border-zinc-200 bg-white px-4 py-3"
                   >
-                    <div className="min-w-0 space-y-0.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-semibold text-zinc-900">{lobby.host}</span>
-                        <span className="rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">{lobby.players}/2</span>
-                      </div>
-                      <p className="font-mono text-xs font-semibold tracking-widest text-zinc-400">{lobby.code}</p>
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="truncate font-semibold text-zinc-900">{lobby.host}</span>
+                      <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500">
+                        {lobby.players}/2
+                      </span>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleJoinPublicGame(lobby.code)}
-                      disabled={!hasUsername || lobby.players >= 2 || joiningPublicCode === lobby.code}
-                      className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40 sm:self-auto"
+                      disabled={
+                        !hasUsername || lobby.players >= 2 || joiningPublicCode === lobby.code || wordStatus === "checking"
+                      }
+                      className="shrink-0 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-40"
                     >
                       {joiningPublicCode === lobby.code ? "Joining..." : "Join"}
                     </button>
