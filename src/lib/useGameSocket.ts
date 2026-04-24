@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { GameStateView } from "../../shared/types";
-import { api } from "./api";
+import { api, getStoredToken } from "./api";
 
 export interface GameSocketResponse {
   gameState: GameStateView | null;
@@ -28,11 +28,9 @@ function buildSocketUrl(): string {
     return "";
   }
   const base = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
-  if (base) {
-    return base.replace(/\/$/, "") + "/ws";
-  }
-  const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${protocol}//${window.location.host}/ws`;
+  const origin = base ? base.replace(/\/$/, "") : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+  const token = getStoredToken();
+  return token ? `${origin}/ws?token=${encodeURIComponent(token)}` : `${origin}/ws`;
 }
 
 export function useGameSocket(gameId: string | null): GameSocketResult {

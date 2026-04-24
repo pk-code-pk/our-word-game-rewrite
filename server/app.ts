@@ -99,7 +99,7 @@ export function createApp() {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
     }
     if (req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -160,8 +160,8 @@ export function createApp() {
       }
 
       const userId = await signUp(req.body.username ?? req.body.identifier ?? req.body.email ?? "", req.body.password ?? "");
-      await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
-      res.json({ ok: true, user: await getUserById(userId) });
+      const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
+      res.json({ ok: true, user: await getUserById(userId), token });
       return;
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not sign up." });
@@ -175,8 +175,8 @@ export function createApp() {
         req.body.identifier ?? req.body.email ?? req.body.username ?? "",
         req.body.password ?? ""
       );
-      await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
-      res.json({ ok: true, user: await getUserById(userId) });
+      const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
+      res.json({ ok: true, user: await getUserById(userId), token });
     } catch (error) {
       res.status(400).json({ error: error instanceof Error ? error.message : "Could not sign in." });
     }
@@ -185,8 +185,8 @@ export function createApp() {
   app.post("/api/auth/anonymous", async (req, res) => {
     const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
     const userId = await signInAnonymously();
-    await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
-    res.json({ ok: true, user: await getUserById(userId) });
+    const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
+    res.json({ ok: true, user: await getUserById(userId), token });
   });
 
   app.post("/api/auth/signout", async (req, res) => {

@@ -169,7 +169,7 @@ function deleteSession(sessionId: string | null | undefined): MaybePromise<void>
   return flatMapMaybePromise(db.prepare(`DELETE FROM sessions WHERE id = ?`).run(sessionId), () => undefined);
 }
 
-export function createSession(res: Response, userId: string, options?: CreateSessionOptions): MaybePromise<void> {
+export function createSession(res: Response, userId: string, options?: CreateSessionOptions): MaybePromise<string> {
   const sessionId = crypto.randomBytes(32).toString("hex");
   return flatMapMaybePromise(cleanupExpiredSessions(), () =>
     flatMapMaybePromise(deleteSession(options?.replaceExistingSessionId), () =>
@@ -184,6 +184,7 @@ export function createSession(res: Response, userId: string, options?: CreateSes
             secure: isProduction(),
             maxAge: SESSION_TTL_MS,
           });
+          return sessionId;
         }
       )
     )
@@ -191,7 +192,8 @@ export function createSession(res: Response, userId: string, options?: CreateSes
 }
 
 export function clearSession(req: Request, res: Response): MaybePromise<void> {
-  const sessionId = req.cookies?.[SESSION_COOKIE];
+  const bearerToken = parseBearerToken(req.headers.authorization);
+  const sessionId = bearerToken ?? req.cookies?.[SESSION_COOKIE];
   return flatMapMaybePromise(deleteSession(sessionId), () => {
     res.clearCookie(SESSION_COOKIE, {
       httpOnly: true,
@@ -225,8 +227,15 @@ export function getUserFromSessionId(sessionId: string | null | undefined): Mayb
   });
 }
 
+function parseBearerToken(authHeader: string | undefined): string | null {
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.slice(7).trim();
+  return token || null;
+}
+
 export function getUserFromRequest(req: Request): MaybePromise<AuthUser | null> {
-  return getUserFromSessionId(req.cookies?.[SESSION_COOKIE]);
+  const bearerToken = parseBearerToken(req.headers.authorization);
+  return getUserFromSessionId(bearerToken ?? req.cookies?.[SESSION_COOKIE]);
 }
 
 export function parseSessionIdFromCookieHeader(cookieHeader: string | undefined): string | null {

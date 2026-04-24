@@ -165,7 +165,10 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
     }
 
     try {
-      const sessionId = parseSessionIdFromCookieHeader(request.headers.cookie);
+      const queryToken = request.url?.includes("?")
+        ? new URLSearchParams(request.url.split("?")[1]).get("token")
+        : null;
+      const sessionId = queryToken ?? parseSessionIdFromCookieHeader(request.headers.cookie);
       const user = await getUserFromSessionId(sessionId);
 
       if (!user) {

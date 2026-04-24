@@ -12,6 +12,23 @@ import type {
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 export const AUTH_ERROR_EVENT = "fourfive:unauthorized";
 
+const TOKEN_KEY = "fourfive.token";
+
+export function getStoredToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function setStoredToken(token: string): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TOKEN_KEY, token);
+}
+
+export function clearStoredToken(): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.removeItem(TOKEN_KEY);
+}
+
 export class ApiError extends Error {
   status: number;
   payload: { error?: string } | null;
@@ -92,10 +109,12 @@ type LegacyGameStateResponse = {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined;
+  const token = getStoredToken();
   const response = await fetch(`${API_BASE_URL}${path}`, {
     credentials: "include",
     headers: {
       ...(hasBody ? { "Content-Type": "application/json" } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -169,26 +188,27 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
   };
 }
 
+async function authRequest(path: string, body?: Record<string, unknown>) {
+  const result = await request<{ ok: true; user: AuthUser | null; token?: string }>(path, {
+    method: "POST",
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+  if (result.token) setStoredToken(result.token);
+  return result;
+}
+
 export const api = {
   me: () => request<{ user: AuthUser | null }>("/api/auth/me"),
   signUp: (username: string, password: string) =>
-    request<{ ok: true; user: AuthUser | null }>("/api/auth/signup", {
-      method: "POST",
-      body: JSON.stringify({ username, password }),
-    }),
+    authRequest("/api/auth/signup", { username, password }),
   signIn: (identifier: string, password: string) =>
-    request<{ ok: true; user: AuthUser | null }>("/api/auth/signin", {
-      method: "POST",
-      body: JSON.stringify({ identifier, username: identifier, password }),
-    }),
-  signInAnonymous: () =>
-    request<{ ok: true; user: AuthUser | null }>("/api/auth/anonymous", {
-      method: "POST",
-    }),
-  signOut: () =>
-    request<{ ok: true }>("/api/auth/signout", {
-      method: "POST",
-    }),
+    authRequest("/api/auth/signin", { identifier, username: identifier, password }),
+  signInAnonymous: () => authRequest("/api/auth/anonymous"),
+  signOut: async () => {
+    const result = await request<{ ok: true }>("/api/auth/signout", { method: "POST" });
+    clearStoredToken();
+    return result;
+  },
   changePassword: (currentPassword: string, newPassword: string) =>
     request<{ ok: true }>("/api/auth/password", {
       method: "PATCH",
