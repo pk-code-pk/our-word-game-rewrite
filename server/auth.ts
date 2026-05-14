@@ -192,7 +192,7 @@ export function createSession(res: Response, userId: string, options?: CreateSes
 }
 
 export function clearSession(req: Request, res: Response): MaybePromise<void> {
-  const bearerToken = parseBearerToken(req.headers.authorization);
+  const bearerToken = parseBearerToken(req.headers?.authorization);
   const sessionId = bearerToken ?? req.cookies?.[SESSION_COOKIE];
   return flatMapMaybePromise(deleteSession(sessionId), () => {
     res.clearCookie(SESSION_COOKIE, {
@@ -227,14 +227,14 @@ export function getUserFromSessionId(sessionId: string | null | undefined): Mayb
   });
 }
 
-function parseBearerToken(authHeader: string | undefined): string | null {
+function parseBearerToken(authHeader: string | undefined | null): string | null {
   if (!authHeader?.startsWith("Bearer ")) return null;
   const token = authHeader.slice(7).trim();
   return token || null;
 }
 
 export function getUserFromRequest(req: Request): MaybePromise<AuthUser | null> {
-  const bearerToken = parseBearerToken(req.headers.authorization);
+  const bearerToken = parseBearerToken(req.headers?.authorization);
   return getUserFromSessionId(bearerToken ?? req.cookies?.[SESSION_COOKIE]);
 }
 
