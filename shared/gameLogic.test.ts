@@ -53,7 +53,7 @@ describe("game helpers", () => {
     expect(countDiscoveredSecretLetters("CRANE", opponentAlphabet)).toBe(2);
   });
 
-  it("computes green letter insight with fewer than 5 marks", () => {
+  it("computes green letter insight with 4 present marks", () => {
     const alpha = createEmptyAlphabet();
     alpha.C = "present";
     alpha.R = "present";
@@ -70,7 +70,7 @@ describe("game helpers", () => {
     ]);
   });
 
-  it("reveals green letters when opponent marks 5 or more", () => {
+  it("computes green letter insight with 5 present marks", () => {
     const alpha = createEmptyAlphabet();
     alpha.C = "present";
     alpha.R = "present";

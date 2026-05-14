@@ -398,11 +398,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
                   <p className="text-sm font-medium text-emerald-900">Your green letters:</p>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                    {displayed.map((letter, i) => (
+                    {displayed.map((letter) => (
                       <span
                         key={letter}
                         ref={(el) => {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
+                          else greenTileRefs.current.delete(letter.charCodeAt(0));
                         }}
                         className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 py-0.5 font-mono text-xs font-bold tracking-widest text-white"
                       >
@@ -556,7 +557,7 @@ function GuessColumn(props: {
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
       <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
-        <h3 className="text-sm font-semibold text-zinc-700"># of letters in opponent&apos;s word</h3>
+        <span className="text-sm font-semibold text-zinc-700"># of letters in opponent&apos;s word</span>
       </div>
       <div
         ref={props.scrollRef}

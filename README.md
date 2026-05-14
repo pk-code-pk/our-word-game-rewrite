@@ -88,6 +88,10 @@ What still needs to happen outside the repo:
    Check signup, sign-in, guest upgrade, friend request, game invite, create/join game, refresh persistence, and sign-out/sign-back-in.
 5. Only promote to production after the preview environment keeps data across redeploys and refreshes.
 
+## Jeff's Changes
+
+Jeff's work lives at **[github.com/jmperrotti/our-word-game](https://github.com/jmperrotti/our-word-game)** on the **`jeffschanges`** branch. Any time you want to review or pull in Jeff's latest work, that is the canonical reference.
+
 ## Verification Status
 
 The intended verification command is still `npm run verify`, and the frontend build currently succeeds. At the moment, there are active backend TypeScript issues outside this README/config lane that still need to be resolved before the full repo can be called green end to end. The tests in [server/auth.test.ts](/Users/praneelkhiantani/Downloads/our-word-game/server/auth.test.ts) have been updated for the newer async auth/session APIs so the verification layer stays aligned with the backend contract while those remaining server fixes land.
