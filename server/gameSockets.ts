@@ -17,6 +17,7 @@ type ClientSocket = WebSocket & {
   isAlive: boolean;
   user: AuthUser | null;
   gameId: string | null;
+  sessionId: string | null;
 };
 
 const gameSubscribers = new Map<string, Set<ClientSocket>>();
@@ -182,6 +183,7 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
         client.isAlive = true;
         client.user = user;
         client.gameId = null;
+        client.sessionId = sessionId;
         wss.emit("connection", client, request);
       });
     } catch (error) {
@@ -212,19 +214,41 @@ export function attachWebSocketServer(httpServer: HttpServer): WebSocketServer {
   });
 
   const heartbeat = setInterval(() => {
-    for (const client of wss.clients) {
-      const socket = client as ClientSocket;
-      if (!socket.isAlive) {
-        socket.terminate();
-        continue;
+    void (async () => {
+      for (const client of wss.clients) {
+        const socket = client as ClientSocket;
+        if (!socket.isAlive) {
+          socket.terminate();
+          continue;
+        }
+
+        // Validate that the session is still active. Without this, a session
+        // revoked or expired mid-connection would continue receiving game state.
+        if (socket.sessionId) {
+          try {
+            const stillValid = await getUserFromSessionId(socket.sessionId);
+            if (!stillValid) {
+              try {
+                socket.close(4401, "Session expired.");
+              } catch {
+                socket.terminate();
+              }
+              removeSubscriber(socket);
+              continue;
+            }
+          } catch {
+            // DB hiccup — don't kick the user; we'll retry next heartbeat.
+          }
+        }
+
+        socket.isAlive = false;
+        try {
+          socket.ping();
+        } catch {
+          socket.terminate();
+        }
       }
-      socket.isAlive = false;
-      try {
-        socket.ping();
-      } catch {
-        socket.terminate();
-      }
-    }
+    })();
   }, HEARTBEAT_INTERVAL_MS);
 
   wss.on("close", () => {

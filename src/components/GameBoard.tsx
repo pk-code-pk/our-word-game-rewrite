@@ -35,11 +35,21 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const myGuesses = gameState?.myGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
-  // Clear optimistic guess once the real state catches up
+  // Clear optimistic guess once the real state catches up. A safety timeout
+  // also clears it if the server quietly drops/rejects the guess (e.g. invalid
+  // word) and no matching entry ever lands in myGuesses.
   useEffect(() => {
-    if (optimisticGuess && myGuesses.some((g) => g.text === optimisticGuess.text && g.type === optimisticGuess.type)) {
-      setOptimisticGuess(null);
+    if (!optimisticGuess) {
+      return;
     }
+    if (myGuesses.some((g) => g.text === optimisticGuess.text && g.type === optimisticGuess.type)) {
+      setOptimisticGuess(null);
+      return;
+    }
+    const timeoutId = window.setTimeout(() => {
+      setOptimisticGuess((current) => (current?.id === optimisticGuess.id ? null : current));
+    }, 5_000);
+    return () => window.clearTimeout(timeoutId);
   }, [myGuesses, optimisticGuess]);
 
   useEffect(() => {

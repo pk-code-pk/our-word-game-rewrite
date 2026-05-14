@@ -86,6 +86,15 @@ const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS ?? "")
   .map((o) => o.trim())
   .filter(Boolean);
 
+// Localhost dev origins that are safe to accept when ALLOWED_ORIGINS is empty.
+// Anything else (including a deployed staging host) must be added explicitly.
+const DEV_ORIGIN_PATTERN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+function isOriginAllowed(origin: string) {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  if (isProduction()) return false;
+  return DEV_ORIGIN_PATTERN.test(origin);
+}
+
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
@@ -96,8 +105,9 @@ export function createApp() {
 
   app.use((req, res, next) => {
     const origin = req.headers.origin;
-    if (origin && (ALLOWED_ORIGINS.includes(origin) || !isProduction())) {
+    if (origin && isOriginAllowed(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
+      res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
       res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
@@ -130,13 +140,20 @@ export function createApp() {
   app.use("/api/social", createSocialRouter());
 
   app.get("/api/health", (_req, res) => {
+    // Production health is intentionally minimal. Internal details (provider,
+    // session cookie name, build commit, dictionary stats) are only useful when
+    // diagnosing locally and are reconnaissance signal otherwise.
+    if (isProduction()) {
+      res.json({ ok: true });
+      return;
+    }
     res.json({
       ok: true,
       sessionCookie: getSessionCookieName(),
       build: getBuildInfo(),
       database: {
         provider: databaseProvider,
-        ...(isProduction() ? {} : { file: databaseFile }),
+        file: databaseFile,
       },
       realtime: "websocket",
       dictionary: getWordBankStats(),

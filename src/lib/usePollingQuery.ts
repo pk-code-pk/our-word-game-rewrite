@@ -1,4 +1,5 @@
 import { startTransition, useEffect, useRef, useState } from "react";
+import { ApiError } from "./api";
 import { isDocumentVisible, stabilizeJsonValue } from "./pollingUtils";
 
 export interface PollingQueryOptions {
@@ -7,6 +8,8 @@ export interface PollingQueryOptions {
   pauseWhenHidden?: boolean;
   refreshIndicatorDelayMs?: number;
 }
+
+const MAX_ERROR_BACKOFF_MS = 30_000;
 
 export interface PollingQueryResult<T> {
   data: T | undefined;
@@ -42,6 +45,8 @@ export function usePollingQuery<T>(
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const inFlightRef = useRef(false);
   const visibleRef = useRef(isDocumentVisible());
+  const consecutiveErrorsRef = useRef(0);
+  const authBlockedRef = useRef(false);
 
   loaderRef.current = loader;
 
@@ -122,11 +127,20 @@ export function usePollingQuery<T>(
     try {
       const next = await loaderRef.current();
       if (effectGenerationRef.current === effectGeneration && latestRequestRef.current === requestId) {
+        consecutiveErrorsRef.current = 0;
         setStableData(next);
       }
     } catch (cause) {
       if (effectGenerationRef.current === effectGeneration && latestRequestRef.current === requestId) {
         const nextError = cause instanceof Error ? cause : new Error("Request failed.");
+        // Stop polling on auth failure — repeating with a dead token just keeps
+        // showing stale data. ApiError dispatches AUTH_ERROR_EVENT which the app
+        // already handles to surface a sign-in prompt.
+        if (nextError instanceof ApiError && nextError.status === 401) {
+          authBlockedRef.current = true;
+        } else {
+          consecutiveErrorsRef.current += 1;
+        }
         startTransition(() => {
           setError(nextError);
           setLoading(false);
@@ -145,13 +159,22 @@ export function usePollingQuery<T>(
         return;
       }
 
+      if (authBlockedRef.current) {
+        setIsPaused(true);
+        return;
+      }
+
       if (pauseWhenHidden && !visibleRef.current) {
         setIsPaused(true);
         return;
       }
 
       setIsPaused(false);
-      scheduleNextRun(effectGeneration, intervalMs);
+      const errors = consecutiveErrorsRef.current;
+      const delay = errors === 0
+        ? intervalMs
+        : Math.min(intervalMs * 2 ** Math.min(errors, 5), MAX_ERROR_BACKOFF_MS);
+      scheduleNextRun(effectGeneration, delay);
     }
   };
 
@@ -166,6 +189,10 @@ export function usePollingQuery<T>(
     }
 
     const effectGeneration = ++effectGenerationRef.current;
+    // A new effect run (deps change → new token / new user / re-mount) should
+    // retry from scratch, regardless of prior auth/error state.
+    consecutiveErrorsRef.current = 0;
+    authBlockedRef.current = false;
     let cancelled = false;
 
     const syncVisibility = () => {

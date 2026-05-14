@@ -94,8 +94,11 @@ async function getRemoteDb() {
   if (!remoteClientPromise) {
     remoteClientPromise = Promise.resolve().then(() => {
       const client = postgres(remoteDatabaseUrl, {
-        max: 3,
-        idle_timeout: 60,
+        // Polling (every 2s for social, every 5s for recent games) plus per-game
+        // WebSocket fetches mean even ~20 concurrent users can exhaust a pool of
+        // 3 in bursts. Neon allows hundreds of connections; size for headroom.
+        max: Number(process.env.DATABASE_POOL_MAX ?? 15),
+        idle_timeout: 30,
         connect_timeout: 10,
         types: {
           bigint: postgres.BigInt,

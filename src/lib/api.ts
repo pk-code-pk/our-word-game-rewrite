@@ -12,6 +12,11 @@ import type {
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 export const AUTH_ERROR_EVENT = "fourfive:unauthorized";
 
+// The session cookie (httpOnly, Secure, SameSite=None in cross-origin deploys)
+// is the primary auth and is unreadable from JS. This Bearer token is a fallback
+// for cross-origin browsers that drop third-party cookies (Safari ITP). It is
+// the same value as the cookie; consider migrating to short-lived WS tickets if
+// the threat model later requires reducing XSS-stealable credential lifetime.
 const TOKEN_KEY = "fourfive.token";
 
 export function getStoredToken(): string | null {

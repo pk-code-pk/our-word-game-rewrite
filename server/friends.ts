@@ -490,8 +490,8 @@ export async function listSocialOverview(user: AuthUser): Promise<SocialOverview
               receiver.id AS receiver_id, receiver.email AS receiver_email, receiver.username AS receiver_username, receiver.is_anonymous AS receiver_is_anonymous,
               receiver.created_at AS receiver_created_at
        FROM friend_requests
-       JOIN users AS sender ON sender.id = friend_requests.sender_user_id
-       JOIN users AS receiver ON receiver.id = friend_requests.receiver_user_id
+       LEFT JOIN users AS sender ON sender.id = friend_requests.sender_user_id
+       LEFT JOIN users AS receiver ON receiver.id = friend_requests.receiver_user_id
        WHERE friend_requests.status = 'pending'
          AND (friend_requests.sender_user_id = ? OR friend_requests.receiver_user_id = ?)
        ORDER BY friend_requests.created_at DESC`

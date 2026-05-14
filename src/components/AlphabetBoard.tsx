@@ -21,6 +21,12 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
   const [optimisticAlphabet, setOptimisticAlphabet] = useState<Partial<Record<string, AlphabetState>>>({});
   const pendingStateRef = useRef(new Map<string, AlphabetState>());
   const inFlightLettersRef = useRef(new Set<string>());
+  // Synchronous, render-independent record of the user's latest intent for each
+  // letter. Rapid taps can fire before React has rendered the previous setState,
+  // so reading optimisticAlphabet from closure gives a stale value and the cycle
+  // (unknown → present → absent → unknown) gets stuck. This ref is updated
+  // synchronously on every click so the next click always advances.
+  const latestIntentRef = useRef(new Map<string, AlphabetState>());
 
   useEffect(() => {
     setOptimisticAlphabet((current) => {
@@ -39,6 +45,7 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
           const serverValue = alphabet[letter] ?? "unknown";
           if (serverValue === next[letter]) {
             delete next[letter];
+            latestIntentRef.current.delete(letter);
             changed = true;
           }
         }
@@ -51,6 +58,7 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
   useEffect(() => {
     pendingStateRef.current.clear();
     inFlightLettersRef.current.clear();
+    latestIntentRef.current.clear();
     setOptimisticAlphabet({});
   }, [gameId]);
 
@@ -98,10 +106,11 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
         state: desiredState,
       });
     } catch (error) {
+      // Re-queue the desired state so a transient network failure doesn't
+      // silently lose the click. The finally block will retry it.
       if (!pendingStateRef.current.has(letter)) {
-        setOptimisticLetter(letter, undefined);
+        pendingStateRef.current.set(letter, desiredState);
       }
-
       toast.error(error instanceof Error ? error.message : "Failed to update alphabet");
     } finally {
       inFlightLettersRef.current.delete(letter);
@@ -117,8 +126,12 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       return;
     }
 
-    const currentState = getDisplayedState(letter);
+    // Read the user's latest intent (sync) rather than rendered state (async),
+    // so rapid taps always advance through unknown → present → absent → unknown.
+    const currentState =
+      latestIntentRef.current.get(letter) ?? alphabet[letter] ?? "unknown";
     const newState = getNextAlphabetState(currentState);
+    latestIntentRef.current.set(letter, newState);
     setOptimisticLetter(letter, newState);
     pendingStateRef.current.set(letter, newState);
     void persistLetterState(letter);

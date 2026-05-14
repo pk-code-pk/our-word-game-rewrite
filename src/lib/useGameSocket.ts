@@ -2,6 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import type { GameStateView } from "../../shared/types";
 import { api, getStoredToken } from "./api";
 
+// Delay before falling back to HTTP polling. Lets the WS connection establish
+// (typically <500ms) without two transports racing each other on initial mount.
+const POLL_FALLBACK_DELAY_MS = 1_500;
+
 export interface GameSocketResponse {
   gameState: GameStateView | null;
 }
@@ -62,6 +66,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     let reconnectTimer: number | null = null;
     let pingTimer: number | null = null;
     let pollTimer: number | null = null;
+    let pollFallbackTimer: number | null = null;
+    // Monotonic id for state-apply calls so a slow in-flight fetch can't
+    // overwrite newer state arriving from another source (WS or a later poll).
+    let appliedStateSeq = 0;
+    let latestRequestSeq = 0;
 
     const clearReconnect = () => {
       if (reconnectTimer !== null) {
@@ -82,9 +91,22 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
         window.clearInterval(pollTimer);
         pollTimer = null;
       }
+      if (pollFallbackTimer !== null) {
+        window.clearTimeout(pollFallbackTimer);
+        pollFallbackTimer = null;
+      }
     };
 
-    const applyState = (state: GameStateView | null) => {
+    const applyState = (state: GameStateView | null, seq?: number) => {
+      if (seq !== undefined && seq < appliedStateSeq) {
+        // Ignore: a newer state already won the race.
+        return;
+      }
+      if (seq !== undefined) {
+        appliedStateSeq = seq;
+      } else {
+        appliedStateSeq = ++latestRequestSeq;
+      }
       const next: GameSocketResponse = { gameState: state };
       dataRef.current = next;
       setData(next);
@@ -99,10 +121,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     };
 
     const fetchState = async () => {
+      const seq = ++latestRequestSeq;
       try {
         const response = await api.getGameState(gameId);
         if (cancelled) return;
-        applyState(response.gameState ?? null);
+        applyState(response.gameState ?? null, seq);
       } catch (cause) {
         if (cancelled) return;
         applyError(cause);
@@ -161,6 +184,12 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
         setError(null);
         stopPolling();
 
+        // Re-sync from the source of truth before relying on incremental WS
+        // pushes. Without this, the client can drift if changes happened while
+        // the socket was reconnecting — including during the brief gap on the
+        // initial connect after this hook mounts.
+        void fetchState();
+
         try {
           ws?.send(JSON.stringify({ type: "subscribe", gameId }));
         } catch (cause) {
@@ -190,10 +219,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
         switch (parsed.type) {
           case "gameState":
-            applyState(parsed.state);
+            // Server-pushed state is authoritative and most-recent by definition.
+            applyState(parsed.state, ++latestRequestSeq);
             return;
           case "gameEnded":
-            applyState(null);
+            applyState(null, ++latestRequestSeq);
             return;
           case "error":
             applyError(new Error(parsed.message));
@@ -235,8 +265,14 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
     void fetchState();
     openSocket();
-    // Start polling immediately as a safety net; stops once WS connects
-    startPolling();
+    // Defer polling fallback briefly so it doesn't race with the WS handshake.
+    // If the WS opens within the delay, onopen calls stopPolling() and this is
+    // a no-op. If it doesn't, polling kicks in as the safety net.
+    pollFallbackTimer = window.setTimeout(() => {
+      pollFallbackTimer = null;
+      if (cancelled || connectedRef.current) return;
+      startPolling();
+    }, POLL_FALLBACK_DELAY_MS);
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("focus", handleVisibilityChange);

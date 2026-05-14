@@ -43,7 +43,10 @@ function Content() {
 
   const recentGamesQuery = usePollingQuery(() => api.getPlayerGames(), [user?.id], {
     enabled: isAuthenticated,
-    intervalMs: 1000,
+    // The recent-games panel isn't a realtime surface — bumping from 1s to 5s
+    // cuts ~80% of DB load with no user-visible change. The active game itself
+    // uses WebSockets for realtime updates.
+    intervalMs: 5000,
   });
 
   const [playState, setPlayState] = useState<PlayState>(() =>
