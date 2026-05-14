@@ -119,6 +119,15 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
 
     const currentState = getDisplayedState(letter);
     const newState = getNextAlphabetState(currentState);
+
+    if (newState === "present") {
+      const greenCount = ALPHABET.filter((l) => getDisplayedState(l) === "present").length;
+      if (greenCount >= 5) {
+        toast.error("You can only mark up to 5 green letters");
+        return;
+      }
+    }
+
     setOptimisticLetter(letter, newState);
     pendingStateRef.current.set(letter, newState);
     void persistLetterState(letter);
@@ -172,15 +181,11 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       {/* Legend — caption under the letter grid */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-100 px-3 py-3 text-sm font-medium leading-snug text-zinc-600 lg:gap-x-5 lg:px-4 lg:text-base">
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
-            A
-          </span>
+          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-emerald-600 bg-emerald-500 lg:h-8 lg:w-8" />
           <span>= in the opponent&apos;s word</span>
         </span>
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
-            B
-          </span>
+          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-rose-600 bg-rose-500 lg:h-8 lg:w-8" />
           <span>= not in the opponent&apos;s word</span>
         </span>
       </div>

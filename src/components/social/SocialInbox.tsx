@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { FriendRequestView, GameInviteView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
@@ -14,6 +14,8 @@ interface SocialInboxProps {
   onSocialMutated?: () => void;
   secretWord: string;
   className?: string;
+  forceOpen?: boolean;
+  onForceOpenConsumed?: () => void;
 }
 
 function formatTimestamp(timestamp: number) {
@@ -50,9 +52,18 @@ export function SocialInbox({
   onSocialMutated,
   secretWord,
   className = "",
+  forceOpen,
+  onForceOpenConsumed,
 }: SocialInboxProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      onForceOpenConsumed?.();
+    }
+  }, [forceOpen, onForceOpenConsumed]);
   const [refreshTick, setRefreshTick] = useState(0);
   const [submittingRequestId, setSubmittingRequestId] = useState<string | null>(null);
   const [submittingInviteId, setSubmittingInviteId] = useState<string | null>(null);

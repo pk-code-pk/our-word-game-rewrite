@@ -9,6 +9,7 @@ interface GameLobbyProps {
   onUsernameChange: (username: string) => void;
   onGameStart: (gameId: string) => void;
   onPlayWithFriend: () => void;
+  onAcceptInvite: () => void;
 }
 
 type WordStatus = "idle" | "checking" | "valid" | "invalid";
@@ -20,6 +21,7 @@ export function GameLobby({
   onUsernameChange,
   onGameStart,
   onPlayWithFriend,
+  onAcceptInvite,
 }: GameLobbyProps) {
   const [isFinding, setIsFinding] = useState(false);
   const [wordStatus, setWordStatus] = useState<WordStatus>(() =>
@@ -136,14 +138,14 @@ export function GameLobby({
           </div>
 
           {/* Action buttons */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-3">
             <button
               type="button"
               onClick={handleFindGame}
               disabled={!hasUsername || isFinding || wordStatus === "checking"}
               className="rounded-lg bg-zinc-900 py-3 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isFinding ? "Finding..." : "Join a game"}
+              {isFinding ? "Finding..." : "Join game"}
             </button>
             <button
               type="button"
@@ -151,7 +153,14 @@ export function GameLobby({
               disabled={!hasUsername || wordStatus === "checking"}
               className="rounded-lg border border-zinc-300 bg-white py-3 font-semibold text-zinc-900 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              Play with friend
+              Invite friend
+            </button>
+            <button
+              type="button"
+              onClick={onAcceptInvite}
+              className="rounded-lg border border-zinc-300 bg-white py-3 font-semibold text-zinc-900 transition hover:bg-zinc-50"
+            >
+              Accept invite
             </button>
           </div>
         </div>
