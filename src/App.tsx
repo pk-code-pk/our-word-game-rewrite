@@ -185,12 +185,6 @@ function Content() {
 
       <main className="flex-1 px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8 lg:py-8">
         <div className="mx-auto w-full max-w-5xl">
-          {user?.isAnonymous ? (
-            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
-              <strong>Guest mode.</strong> Sign out if you want a saved account and friends.
-            </div>
-          ) : null}
-
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">
@@ -215,12 +209,6 @@ function Content() {
                     setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                   }}
                 />
-
-                {user?.isAnonymous ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                    Friend requests and direct invites are available on saved accounts.
-                  </div>
-                ) : null}
 
                 {recentGamesQuery.error && (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
