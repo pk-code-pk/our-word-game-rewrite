@@ -7,6 +7,7 @@ import { GameBoard } from "./components/GameBoard";
 import { RecentGamesPanel } from "./components/RecentGamesPanel";
 import { ScreenErrorBoundary } from "./components/ScreenErrorBoundary";
 import { FriendsPanel } from "./components/social/FriendsPanel";
+import { GuestInvitesPanel } from "./components/social/GuestInvitesPanel";
 import { SocialInbox } from "./components/social/SocialInbox";
 import { SignInForm } from "./SignInForm";
 import { SignOutButton } from "./SignOutButton";
@@ -150,6 +151,97 @@ function Content() {
   }
 
   const canUseSocial = isAuthenticated && !user?.isAnonymous;
+  const isGuestSignedIn = isAuthenticated && Boolean(user?.isAnonymous);
+
+  async function handleGuestUsernameInvite(targetUsername: string) {
+    const trimmedUsername = username.trim();
+    const normalizedSecret = secretWord.trim();
+
+    if (!normalizedSecret) {
+      setPlayState((prev) => ({ ...prev, gamePhase: "setup" }));
+      toast("Choose your secret word first, then send the invite.");
+      throw new Error("Set your secret word first.");
+    }
+    if (!trimmedUsername) {
+      setPlayState((prev) => ({ ...prev, gamePhase: "lobby" }));
+      toast("Set your display name first, then send the invite.");
+      throw new Error("Set your display name first.");
+    }
+
+    if (gamePhase === "playing" && currentGameId) {
+      try {
+        const response = await api.getGameState(currentGameId);
+        if (response.gameState?.game.status === "waiting") {
+          const result = await api.sendGameInviteByUsername(currentGameId, targetUsername);
+          toast.success(`Invite sent to ${result.receiverDisplayName}.`);
+          return;
+        }
+        if (response.gameState) {
+          toast("Finish this game or return to the lobby before sending a new invite.");
+          throw new Error("Cannot invite while a game is active.");
+        }
+        setPlayState((prev) => clearActiveGame(prev));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to check the current room.";
+        if (!isRecoverableInviteLobbyError(message)) {
+          throw error instanceof Error ? error : new Error(message);
+        }
+        setPlayState((prev) => clearActiveGame(prev));
+      }
+    }
+
+    if (reusableWaitingGame) {
+      try {
+        const result = await api.sendGameInviteByUsername(reusableWaitingGame.gameId, targetUsername);
+        toast.success(`Invite sent to ${result.receiverDisplayName} in room ${reusableWaitingGame.code}.`);
+        setPlayState((prev) => ({
+          ...prev,
+          currentGameId: reusableWaitingGame.gameId,
+          gamePhase: "playing",
+          lobbyCode: "",
+        }));
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Unable to reuse the current waiting room.";
+        if (!isRecoverableInviteLobbyError(message)) {
+          throw error instanceof Error ? error : new Error(message);
+        }
+        setPlayState((prev) => clearActiveGame(prev));
+      }
+    }
+
+    let createdGame: { gameId: string; code: string } | null = null;
+    try {
+      createdGame = await api.createGame({
+        username: trimmedUsername,
+        secretWord: normalizedSecret,
+        public: false,
+      });
+      const created = createdGame;
+      const result = await api.sendGameInviteByUsername(created.gameId, targetUsername);
+      toast.success(`Room ${created.code} created and invite sent to ${result.receiverDisplayName}.`);
+      setPlayState((prev) => ({
+        ...prev,
+        currentGameId: created.gameId,
+        gamePhase: "playing",
+        lobbyCode: "",
+      }));
+    } catch (error) {
+      if (createdGame) {
+        const created = createdGame;
+        setPlayState((prev) => ({
+          ...prev,
+          currentGameId: created.gameId,
+          gamePhase: "playing",
+          lobbyCode: "",
+        }));
+        throw error instanceof Error
+          ? new Error(`${error.message} Your room was still created, so you can invite again from there.`)
+          : new Error("Your room was created, but the invite could not be sent.");
+      }
+      throw error instanceof Error ? error : new Error("Unable to create the room right now.");
+    }
+  }
 
   return (
     <>
@@ -169,6 +261,18 @@ function Content() {
             )}
             {canUseSocial && (
               <SocialInbox
+                secretWord={secretWord}
+                displayName={username}
+                refreshKey={socialRefreshKey}
+                onSocialMutated={refreshSocialData}
+                onOpenGame={(gameId) => {
+                  setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
+                }}
+              />
+            )}
+            {isGuestSignedIn && (
+              <GuestInvitesPanel
+                onSendInvite={handleGuestUsernameInvite}
                 secretWord={secretWord}
                 displayName={username}
                 refreshKey={socialRefreshKey}

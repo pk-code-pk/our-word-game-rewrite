@@ -460,7 +460,6 @@ export async function searchUsers(user: AuthUser, queryInput: string): Promise<S
 }
 
 export async function listSocialOverview(user: AuthUser): Promise<SocialOverview> {
-  assertRegisteredUser(user);
   await cleanupExpiredWaitingGames();
   await expireInvalidPendingGameInvites();
 
@@ -859,8 +858,72 @@ export async function sendGameInvite(user: AuthUser, gameId: string, receiverUse
   return { inviteId };
 }
 
+export async function sendGameInviteByUsername(user: AuthUser, gameId: string, recipientUsername: string) {
+  await cleanupExpiredWaitingGames();
+  await expireInvalidPendingGameInvites();
+
+  if (!gameId.trim()) {
+    throw new Error("Start a lobby first, then invite a player.");
+  }
+
+  const trimmedUsername = recipientUsername.trim();
+  if (!trimmedUsername) {
+    throw new Error("Enter a username to invite.");
+  }
+
+  const createInvite = db.transaction(async (tx) => {
+    const receiver = await getUserByUsernameFrom(tx, trimmedUsername);
+    if (!receiver) {
+      throw new Error("No player found with that username.");
+    }
+    if (receiver.id === user.id) {
+      throw new Error("You can't invite yourself.");
+    }
+
+    const game = (await tx
+      .prepare(
+        `SELECT games.id, games.code, games.status
+         FROM games
+         JOIN players ON players.game_id = games.id AND players.user_id = ?
+         WHERE games.id = ?`
+      )
+      .get(user.id, gameId)) as { id: string; code: string; status: GameStatus } | undefined;
+
+    if (!game) {
+      throw new Error("Waiting game not found.");
+    }
+    if (game.status !== "waiting") {
+      throw new Error("Only waiting lobbies can receive invites.");
+    }
+
+    const playerCount = (await tx
+      .prepare(`SELECT COUNT(*) AS count FROM players WHERE game_id = ?`)
+      .get(game.id)) as { count: number };
+    if (playerCount.count !== 1) {
+      throw new Error("This lobby is no longer available for invitations.");
+    }
+
+    const inviteId = uuid();
+    const inserted = await tx
+      .prepare(
+      `INSERT INTO game_invites (
+          id, game_id, sender_user_id, receiver_user_id, status, created_at
+        ) VALUES (?, ?, ?, ?, 'pending', ?)
+        ON CONFLICT(game_id, receiver_user_id) WHERE status = 'pending' DO NOTHING`
+      )
+      .run(inviteId, game.id, user.id, receiver.id, now());
+
+    if (inserted.changes === 0) {
+      throw new Error("Invite already sent for this game.");
+    }
+
+    return { inviteId, receiverDisplayName: buildDisplayName(receiver.username, receiver.email) };
+  });
+
+  return await createInvite();
+}
+
 export async function cancelGameInvite(user: AuthUser, inviteId: string) {
-  assertRegisteredUser(user);
   const cancelInvite = db.transaction(async (tx) => {
     const invite = await getGameInviteByIdFrom(tx, inviteId);
     if (!invite || invite.status !== "pending") {
@@ -889,7 +952,6 @@ export async function cancelGameInvite(user: AuthUser, inviteId: string) {
 }
 
 export async function declineGameInvite(user: AuthUser, inviteId: string) {
-  assertRegisteredUser(user);
   const declineInvite = db.transaction(async (tx) => {
     const invite = await getGameInviteByIdFrom(tx, inviteId);
     if (!invite || invite.status !== "pending") {
@@ -923,7 +985,6 @@ export async function acceptGameInvite(
   usernameInput: string,
   secretWordInput: string
 ){
-  assertRegisteredUser(user);
   await cleanupExpiredWaitingGames();
   await expireInvalidPendingGameInvites();
 
@@ -936,8 +997,6 @@ export async function acceptGameInvite(
     if (invite.receiver_id !== user.id) {
       throw new Error("You can only accept invites sent to you.");
     }
-
-    await ensureUsersAreFriendsFrom(tx, invite.sender_id, invite.receiver_id);
 
     const game = (await tx
       .prepare(`SELECT id, status, created_at FROM games WHERE id = ?`)
@@ -1096,6 +1155,16 @@ export function createSocialRouter() {
     handleRoute(async (req, res) => {
       const user = await requireUser(req);
       res.json(await sendGameInvite(user, req.body.gameId ?? "", req.body.receiverUserId ?? ""));
+    })
+  );
+
+  router.post(
+    "/game-invites/by-username",
+    handleRoute(async (req, res) => {
+      const user = await requireUser(req);
+      res.json(
+        await sendGameInviteByUsername(user, req.body.gameId ?? "", req.body.username ?? "")
+      );
     })
   );
 

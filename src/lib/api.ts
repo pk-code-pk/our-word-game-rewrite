@@ -315,6 +315,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ gameId, receiverUserId }),
     }),
+  sendGameInviteByUsername: (gameId: string, username: string) =>
+    request<{ inviteId: string; receiverDisplayName: string }>(
+      "/api/social/game-invites/by-username",
+      {
+        method: "POST",
+        body: JSON.stringify({ gameId, username }),
+      }
+    ),
   acceptGameInvite: (inviteId: string, payload: { username: string; secretWord: string }) =>
     request<{ gameId: string }>(`/api/social/game-invites/${inviteId}/accept`, {
       method: "POST",
