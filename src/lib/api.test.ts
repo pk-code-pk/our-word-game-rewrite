@@ -69,6 +69,7 @@ describe("normalizeGameStateResponse", () => {
     });
 
     expect(payload.gameState?.opponentFoundLetterCount).toBe(4);
+    expect(payload.gameState?.opponentGuesses).toEqual([]);
   });
 
   it("keeps opponent presence null when there is no opponent yet", () => {

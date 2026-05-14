@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
@@ -23,6 +23,41 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     id: string; text: string; type: "fourLetter" | "fullWord";
   } | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
+  const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
+  const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
+  const flipSnapshotRef = useRef<Map<number, DOMRect> | null>(null);
+
+  const capturePositions = useCallback(() => {
+    const snap = new Map<number, DOMRect>();
+    greenTileRefs.current.forEach((el, charCode) => {
+      snap.set(charCode, el.getBoundingClientRect());
+    });
+    flipSnapshotRef.current = snap;
+  }, []);
+
+  useLayoutEffect(() => {
+    const snapshot = flipSnapshotRef.current;
+    if (!snapshot || snapshot.size === 0) return;
+    flipSnapshotRef.current = null;
+
+    greenTileRefs.current.forEach((el, charCode) => {
+      const first = snapshot.get(charCode);
+      if (!first) return;
+      const last = el.getBoundingClientRect();
+      const dx = first.left - last.left;
+      const dy = first.top - last.top;
+      if (dx === 0 && dy === 0) return;
+
+      el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy - 20}px) scale(1.1)`, offset: 0 },
+          { transform: `translate(${dx * 0.3}px, -12px) scale(1.05)`, offset: 0.4 },
+          { transform: "translate(0, 0) scale(1)", offset: 1 },
+        ],
+        { duration: 750, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "none" }
+      );
+    });
+  }, [greenLetterOrder]);
   const announcedCompletionRef = useRef<string | null>(null);
   const guessFormRef = useRef<HTMLFormElement | null>(null);
   const guessInputRef = useRef<HTMLInputElement | null>(null);
@@ -33,6 +68,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const currentPlayer = gameState?.me;
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
+  const opponentGuesses = gameState?.opponentGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
   // Clear optimistic guess once the real state catches up. A safety timeout
@@ -323,10 +359,74 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="flex items-center justify-between rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-              <p className="text-sm font-medium text-emerald-900">{opponent.username} found</p>
-              <span className="font-mono text-3xl font-black text-emerald-700">{opponentFoundLetterCount ?? "—"}</span>
+            <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
+              <p className="text-sm font-medium text-emerald-900">
+                {opponent.username}&apos;s most recent 5-letter guess:
+              </p>
+              {(() => {
+                const latestFullWord = [...opponentGuesses].reverse().find((g) => g.type === "fullWord");
+                return latestFullWord ? (
+                  <p className="mt-2 font-mono text-2xl font-black tracking-widest text-emerald-700">
+                    {latestFullWord.text}
+                  </p>
+                ) : (
+                  <p className="mt-1 text-sm text-emerald-700">None yet</p>
+                );
+              })()}
             </section>
+
+            {(() => {
+              const sorted = Object.entries(currentPlayer.alphabet)
+                .filter(([, state]) => state === "present")
+                .map(([letter]) => letter.toUpperCase())
+                .sort();
+              if (sorted.length === 0) return null;
+              const displayed = greenLetterOrder && greenLetterOrder.length === sorted.length &&
+                [...greenLetterOrder].sort().join("") === sorted.join("")
+                ? greenLetterOrder
+                : sorted;
+              const shuffle = () => {
+                capturePositions();
+                const arr = [...sorted];
+                for (let i = arr.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                setGreenLetterOrder(arr);
+              };
+              return (
+                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
+                  <p className="text-sm font-medium text-emerald-900">Your green letters:</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {displayed.map((letter, i) => (
+                      <span
+                        key={letter}
+                        ref={(el) => {
+                          if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
+                        }}
+                        className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 py-0.5 font-mono text-xs font-bold tracking-widest text-white"
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={shuffle}
+                      className="ml-1 inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 active:bg-emerald-100"
+                    >
+                      Shuffle
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
+                        <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H20" />
+                        <path d="m18 2 4 4-4 4" />
+                        <path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" />
+                        <path d="M20 18h-3.9c-1.3 0-2.5-.6-3.3-1.7l-.5-.8" />
+                        <path d="m18 14 4 4-4 4" />
+                      </svg>
+                    </button>
+                  </div>
+                </section>
+              );
+            })()}
 
             <section>
               <GuessColumn
@@ -358,7 +458,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   type="text"
                   value={guessText}
                   onChange={(e) => setGuessText(e.target.value.toUpperCase())}
-                  placeholder={guessType === "fourLetter" ? "4-letter word" : "5-letter word"}
+                  placeholder={guessType === "fourLetter" ? "4-letter guess" : "5-letter guess"}
                   maxLength={guessType === "fourLetter" ? 4 : 5}
                   autoCapitalize="characters"
                   spellCheck={false}
@@ -379,7 +479,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       }`}
                       aria-pressed={guessType === "fourLetter"}
                     >
-                      4 letters
+                      4-letter
                     </button>
                     <button
                       type="button"
@@ -392,7 +492,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       }`}
                       aria-pressed={guessType === "fullWord"}
                     >
-                      Full word
+                      5-letter
                     </button>
                   </div>
                   <button
@@ -454,8 +554,9 @@ function GuessColumn(props: {
 
   return (
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
-      <div className="mb-3">
+      <div className="mb-3 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
+        <h3 className="text-sm font-semibold text-zinc-700"># of letters in opponent&apos;s word</h3>
       </div>
       <div
         ref={props.scrollRef}
@@ -495,7 +596,7 @@ function renderGuessResult(guess: { isCorrect: boolean; type: "fourLetter" | "fu
   }
   return (
     <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
-      {guess.matchCount} match{guess.matchCount !== 1 ? "es" : ""}
+      {guess.matchCount}
     </span>
   );
 }

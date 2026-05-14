@@ -15,8 +15,9 @@ import {
 
 function createMockRequest(sessionId?: string) {
   return {
+    headers: {},
     cookies: sessionId ? { [getSessionCookieName()]: sessionId } : {},
-  } as Request;
+  } as unknown as Request;
 }
 
 function createMockResponse() {

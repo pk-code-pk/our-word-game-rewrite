@@ -139,7 +139,8 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
 
   const getLetterStyle = (letter: string) => {
     const state = getDisplayedState(letter);
-    let base = "flex h-8 w-full items-center justify-center rounded border-2 text-xs font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-9";
+    let base =
+      "flex h-7 w-full items-center justify-center rounded border-2 text-[11px] font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-8 lg:text-xs";
 
     if (disabled) {
       base += " cursor-not-allowed opacity-40";
@@ -181,16 +182,19 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
         ))}
       </div>
 
-      {/* Legend */}
-      <div className="flex items-center gap-3 border-t border-zinc-100 px-3 py-2 text-[10px] font-medium text-zinc-400 lg:px-4">
-        <span>tap to mark</span>
-        <span className="flex items-center gap-1">
-          <span className="flex h-4 w-4 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-[8px] font-bold text-white">A</span>
-          <span>= in</span>
+      {/* Legend — caption under the letter grid */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-100 px-3 py-3 text-sm font-medium leading-snug text-zinc-600 lg:gap-x-5 lg:px-4 lg:text-base">
+        <span className="flex items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
+            A
+          </span>
+          <span>= in the opponent&apos;s word</span>
         </span>
-        <span className="flex items-center gap-1">
-          <span className="flex h-4 w-4 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-[8px] font-bold text-white">B</span>
-          <span>= out</span>
+        <span className="flex items-center gap-2">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
+            B
+          </span>
+          <span>= not in the opponent&apos;s word</span>
         </span>
       </div>
     </div>

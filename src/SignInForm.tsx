@@ -60,10 +60,7 @@ export function SignInForm() {
 
   return (
     <div className="w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-8">
-      <div className="space-y-2">
-        <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">Play FourFive</h2>
-        <p className="text-sm leading-6 text-zinc-600">Sign in, make an account, or keep going as a guest.</p>
-      </div>
+      <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">FourFive</h2>
 
       <div className="mt-6 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 shadow-inner">
         <button
@@ -184,10 +181,6 @@ export function SignInForm() {
       >
         {anonymousSubmitting ? "Working..." : "Continue as guest"}
       </button>
-
-      <p className="mt-4 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 text-center text-xs leading-5 text-zinc-500">
-        Friends are available on saved accounts.
-      </p>
     </div>
   );
 }

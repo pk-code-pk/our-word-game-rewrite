@@ -78,13 +78,14 @@ export function inferApiErrorMessage(params: {
 type GameStateResponse = { gameState: GameStateView | null };
 type LegacyGameStateResponse = {
   gameState:
-    | (Omit<GameStateView, "presence"> & {
+    | (Omit<GameStateView, "presence" | "opponentGuesses"> & {
         presence?: {
           me?: PresenceState;
           opponent?: PresenceState | null;
         };
         opponentFoundLetterCount?: number | null;
         opponentPresentLetterCount?: number | null;
+        opponentGreenLetterInsight?: GameStateView["opponentGreenLetterInsight"];
         opponentGuesses?: Array<{
           id: string;
           playerId: string;
@@ -179,12 +180,14 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
       },
       opponent,
       myGuesses: gameState.myGuesses ?? [],
+      opponentGuesses: gameState.opponentGuesses ?? [],
       opponentFoundLetterCount:
         opponent && typeof gameState.opponentFoundLetterCount === "number"
           ? gameState.opponentFoundLetterCount
           : opponent && typeof gameState.opponentPresentLetterCount === "number"
           ? gameState.opponentPresentLetterCount
           : null,
+      opponentGreenLetterInsight: gameState.opponentGreenLetterInsight ?? null,
       presence: {
         me: gameState.presence?.me ?? "offline",
         opponent: opponent ? (gameState.presence?.opponent ?? "offline") : null,
