@@ -42,6 +42,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
   const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
+  // Once the player has ever marked 5 greens this game, keep the shuffle
+  // bar visible even if they drop back to 4 — they're just iterating, not
+  // intentionally removing the panel. State is per-mount, so a new game
+  // (different key in App.tsx) starts hidden again.
+  const [shuffleUnlocked, setShuffleUnlocked] = useState(false);
   const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
   const flipSnapshotRef = useRef<Map<number, DOMRect> | null>(null);
 
@@ -114,6 +119,18 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   useEffect(() => {
     void loadWordValidator();
   }, []);
+
+  const greenCount = currentPlayer
+    ? Object.values(currentPlayer.alphabet).reduce(
+        (count, state) => (state === "present" ? count + 1 : count),
+        0
+      )
+    : 0;
+  useEffect(() => {
+    if (greenCount >= 5) {
+      setShuffleUnlocked(true);
+    }
+  }, [greenCount]);
 
   useEffect(() => {
     if (gameState?.game.status === "completed") {
@@ -384,15 +401,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               </p>
             </section>
 
-            {(() => {
+            {shuffleUnlocked && (() => {
               const sorted = Object.entries(currentPlayer.alphabet)
                 .filter(([, state]) => state === "present")
                 .map(([letter]) => letter.toUpperCase())
                 .sort();
-              // Shuffling fewer than 5 greens isn't strategically useful since
-              // the secret word is exactly 5 distinct letters — only show the
-              // section once the player has narrowed the set down completely.
-              if (sorted.length < 5) return null;
               const displayed = greenLetterOrder && greenLetterOrder.length === sorted.length &&
                 [...greenLetterOrder].sort().join("") === sorted.join("")
                 ? greenLetterOrder
