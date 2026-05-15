@@ -346,11 +346,21 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-amber-50 px-4 py-3">
-              <p className="text-sm font-medium text-amber-900">
-                {opponent.username} has found{" "}
-                <span className="font-bold">{opponentFoundLetterCount ?? 0}</span> of your word&apos;s 5 letters
-              </p>
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl font-black text-emerald-700">
+                    {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
+                  </span>
+                  <span className="text-xs font-medium text-zinc-500">{currentPlayer.username}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl font-black text-emerald-700">
+                    {opponentFoundLetterCount ?? 0}
+                  </span>
+                  <span className="text-xs font-medium text-zinc-500">{opponent.username}</span>
+                </div>
+              </div>
             </section>
 
             {(() => {
