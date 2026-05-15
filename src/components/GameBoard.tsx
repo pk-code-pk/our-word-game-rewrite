@@ -5,6 +5,7 @@ import { AlphabetBoard } from "./AlphabetBoard";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
+import { useOptimisticAlphabet } from "../lib/useOptimisticAlphabet";
 
 // Lazy-loaded so the ~130 KB word list doesn't enter the initial bundle.
 // First guess submission pays the import cost; subsequent ones hit the cache.
@@ -87,6 +88,16 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
+
+  // Shared optimistic alphabet — both AlphabetBoard instances and the
+  // green-letters bar read from the same displayedAlphabet so a click
+  // updates everything in the same render (no WS round-trip lag).
+  const alphabetDisabled = gameState?.game.status !== "active";
+  const { displayedAlphabet, toggleLetter } = useOptimisticAlphabet(
+    gameId,
+    currentPlayer?.alphabet,
+    alphabetDisabled
+  );
 
   // Clear optimistic guess once the real state catches up. A safety timeout
   // also clears it if the server quietly drops/rejects the guess (e.g. invalid
@@ -385,7 +396,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
             </section>
 
             {(() => {
-              const sorted = Object.entries(currentPlayer.alphabet)
+              const sorted = Object.entries(displayedAlphabet)
                 .filter(([, state]) => state === "present")
                 .map(([letter]) => letter.toUpperCase())
                 .sort();
@@ -404,7 +415,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               };
               return (
                 <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3 lg:px-6 lg:py-4">
-                  <div className="flex flex-wrap items-center gap-1.5 lg:gap-2.5">
+                  {/* min-h reserves the tile-row height so adding the first
+                      letter doesn't bump the layout down. */}
+                  <div className="flex min-h-9 flex-wrap items-center gap-1.5 lg:min-h-12 lg:gap-2.5">
                     {displayed.map((letter) => (
                       <span
                         key={letter}
@@ -517,7 +530,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
             {/* Alphabet — visible inline on mobile (below the composer), hidden on desktop (sidebar handles it) */}
             <div className="lg:hidden">
-              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+              <AlphabetBoard
+                displayedAlphabet={displayedAlphabet}
+                onToggleLetter={toggleLetter}
+                disabled={!isGameActive}
+              />
             </div>
           </div>
         )}
@@ -535,7 +552,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       </div>
 
       <div className="min-w-0 lg:sticky lg:top-16 lg:self-start hidden lg:block">
-        <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+        <AlphabetBoard
+                displayedAlphabet={displayedAlphabet}
+                onToggleLetter={toggleLetter}
+                disabled={!isGameActive}
+              />
       </div>
     </div>
   );
