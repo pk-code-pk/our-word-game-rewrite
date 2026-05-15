@@ -346,21 +346,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-8 lg:py-5">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium text-zinc-600 lg:text-base">You</span>
-                  <span className="text-3xl font-black text-emerald-700 lg:text-5xl">
-                    {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
-                  </span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium text-zinc-600 lg:text-base">{opponent.username}</span>
-                  <span className="text-3xl font-black text-emerald-700 lg:text-5xl">
-                    {opponentFoundLetterCount ?? 0}
-                  </span>
-                </div>
-              </div>
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-6 lg:py-4">
+              <p className="text-center text-sm font-medium text-zinc-700 lg:text-base">
+                {opponent.username} has found <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
+              </p>
             </section>
 
             {(() => {
@@ -414,6 +403,20 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </section>
               );
             })()}
+
+            <section>
+              <GuessColumn
+                title="Your guesses"
+                elementId="my-guesses"
+                guesses={myGuesses}
+                optimisticGuess={optimisticGuess}
+                emptyText="No guesses yet"
+                scrollRef={myGuessesRef}
+                onScroll={() => {
+                  keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
+                }}
+              />
+            </section>
 
             {isGameActive && (
               <form
@@ -479,20 +482,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </div>
               </form>
             )}
-
-            <section>
-              <GuessColumn
-                title="Your guesses"
-                elementId="my-guesses"
-                guesses={myGuesses}
-                optimisticGuess={optimisticGuess}
-                emptyText="No guesses yet"
-                scrollRef={myGuessesRef}
-                onScroll={() => {
-                  keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
-                }}
-              />
-            </section>
 
             {/* Alphabet — visible inline on mobile (at bottom), hidden on desktop (sidebar handles it) */}
             <div className="lg:hidden">

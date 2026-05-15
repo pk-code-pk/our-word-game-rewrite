@@ -314,6 +314,7 @@ export function buildGameStateView<
           secretWord: shouldRevealWords ? opponent.secretWord : undefined,
         }
       : null,
+    myFoundLetterCount: opponent ? countDiscoveredSecretLetters(opponent.secretWord, me.alphabet) : null,
     opponentFoundLetterCount: opponent ? countDiscoveredSecretLetters(me.secretWord, opponent.alphabet) : null,
     opponentGreenLetterInsight: opponent ? computeOpponentGreenLetterInsight(me.secretWord, opponent.alphabet) : null,
     myGuesses,

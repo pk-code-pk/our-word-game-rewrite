@@ -940,6 +940,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
+      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
       opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
@@ -1088,6 +1089,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
+      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
       opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
