@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
-import { PresenceBadge } from "./PresenceBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
@@ -316,13 +315,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           </div>
         )}
 
-        {opponent && (
-          <div className="flex gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
-            <PresenceBadge status={presence.me} label="You" />
-            <PresenceBadge status={presence.opponent} label={opponent.username} />
-          </div>
-        )}
-
         {opponent && gameState.game.status === "completed" && (
           <div className="grid gap-4 md:grid-cols-2">
             <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
@@ -349,16 +341,16 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
             <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col items-center">
-                  <span className="text-2xl font-black text-emerald-700">
+                  <span className="text-sm font-medium text-zinc-600">You</span>
+                  <span className="text-3xl font-black text-emerald-700">
                     {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
                   </span>
-                  <span className="text-xs font-medium text-zinc-500">{currentPlayer.username}</span>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-2xl font-black text-emerald-700">
+                  <span className="text-sm font-medium text-zinc-600">{opponent.username}</span>
+                  <span className="text-3xl font-black text-emerald-700">
                     {opponentFoundLetterCount ?? 0}
                   </span>
-                  <span className="text-xs font-medium text-zinc-500">{opponent.username}</span>
                 </div>
               </div>
             </section>
