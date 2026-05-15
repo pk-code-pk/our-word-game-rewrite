@@ -22,6 +22,16 @@ interface GameBoardProps {
   onExitToMenu: () => void;
 }
 
+type OptimisticGuessRow = {
+  id: string;
+  text: string;
+  type: "fourLetter" | "fullWord";
+  /** Until submitGuess returns — same moment as the toast gets its numbers */
+  pending: boolean;
+  matchCount?: number;
+  isCorrect?: boolean;
+};
+
 export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const { user } = useAuth();
   const gameStateQuery = useGameSocket(gameId);
@@ -29,9 +39,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const [guessText, setGuessText] = useState("");
   const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [optimisticGuess, setOptimisticGuess] = useState<{
-    id: string; text: string; type: "fourLetter" | "fullWord";
-  } | null>(null);
+  const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
   const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
   const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
@@ -101,6 +109,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     latestGameStatusRef.current = gameState?.game.status;
   }, [gameState?.game.status]);
 
+  // Warm the ~130KB word-list chunk as soon as the board mounts so the first
+  // submit isn’t blocked on dynamic import (dictionary checks are local Sets).
+  useEffect(() => {
+    void loadWordValidator();
+  }, []);
+
   useEffect(() => {
     if (gameState?.game.status === "completed") {
       if (announcedCompletionRef.current === gameState.game.id) {
@@ -135,10 +149,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    if (shouldPinGuessPane(myGuesses.length, keepMyGuessesPinnedRef.current)) {
+    const effectiveCount = myGuesses.length + (optimisticGuess ? 1 : 0);
+    if (shouldPinGuessPane(effectiveCount, keepMyGuessesPinnedRef.current)) {
       scrollGuessPaneToBottom(myGuessesRef.current);
     }
-  }, [gameState?.game.status, myGuesses.length]);
+  }, [gameState?.game.status, myGuesses.length, optimisticGuess]);
 
   useEffect(() => {
     if (!currentPlayer) {
@@ -209,8 +224,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    // Optimistically show the guess immediately
-    setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType });
+    // Show the word in the list immediately; fill matchCount/isCorrect from the same
+    // API response as the toast (no need to wait for WebSocket gameState).
+    setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType, pending: true });
     setGuessText("");
     keepMyGuessesPinnedRef.current = true;
     window.requestAnimationFrame(() => {
@@ -220,6 +236,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     setIsSubmitting(true);
     try {
       const result = await api.submitGuess(gameId, { type: guessType, text: word });
+      setOptimisticGuess((row) =>
+        row && row.text === word && row.type === guessType
+          ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
+          : row
+      );
       if (result.isCorrect) {
         toast.success("You guessed it!");
       } else if (guessType === "fullWord") {
@@ -531,13 +552,20 @@ function GuessColumn(props: {
     matchCount: number;
     isCorrect: boolean;
   }>;
-  optimisticGuess?: { id: string; text: string; type: "fourLetter" | "fullWord" } | null;
+  optimisticGuess?: OptimisticGuessRow | null;
   emptyText: string;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: React.UIEventHandler<HTMLDivElement>;
 }) {
   const allGuesses = props.optimisticGuess
-    ? [...props.guesses, { ...props.optimisticGuess, matchCount: 0, isCorrect: false, pending: true }]
+    ? [
+        ...props.guesses,
+        {
+          ...props.optimisticGuess,
+          matchCount: props.optimisticGuess.matchCount ?? 0,
+          isCorrect: props.optimisticGuess.isCorrect ?? false,
+        },
+      ]
     : props.guesses;
 
   return (
@@ -559,14 +587,16 @@ function GuessColumn(props: {
           allGuesses.map((guess) => (
             <div
               key={guess.id}
-              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending === true ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
             >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}
               </span>
-              {"pending" in guess && guess.pending
-                ? <span className="text-xs text-zinc-400">...</span>
-                : renderGuessResult(guess)}
+              {"pending" in guess && guess.pending === true ? (
+                <span className="text-xs text-zinc-400">...</span>
+              ) : (
+                renderGuessResult(guess)
+              )}
             </div>
           ))
         )}
