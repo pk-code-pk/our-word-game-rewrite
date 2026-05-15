@@ -43,6 +43,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
   const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
+  // Set of letters currently shown in the green-letters bar, debounced from
+  // the alphabet's `present` state so a transient pass-through (the cycle is
+  // unknown → present → absent, so marking red flashes through green) doesn't
+  // briefly add the letter to the bar.
+  const [committedGreens, setCommittedGreens] = useState<Set<string>>(new Set());
   const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
   const flipSnapshotRef = useRef<Map<number, DOMRect> | null>(null);
 
@@ -98,6 +103,66 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     currentPlayer?.alphabet,
     alphabetDisabled
   );
+
+  // Debounce additions to the green-letters bar. Because the alphabet cycle
+  // is unknown → present → absent, marking a letter red requires passing
+  // through present. Without the delay the letter pops into the bar for a
+  // few hundred ms then vanishes, which feels noisy. Removals are immediate.
+  const pendingGreenTimersRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    const GREEN_COMMIT_DELAY_MS = 600;
+    const timers = pendingGreenTimersRef.current;
+
+    setCommittedGreens((prev) => {
+      let next: Set<string> | null = null;
+
+      // Drop committed letters that are no longer present.
+      for (const letter of prev) {
+        if (displayedAlphabet[letter] !== "present") {
+          if (!next) next = new Set(prev);
+          next.delete(letter);
+        }
+      }
+
+      // For each letter that's present but not yet committed and not already
+      // armed: schedule a commit. For each that's not present: cancel any
+      // pending timer.
+      for (const letter of Object.keys(displayedAlphabet)) {
+        const isPresent = displayedAlphabet[letter] === "present";
+        const isCommitted = (next ?? prev).has(letter);
+        const hasTimer = timers.has(letter);
+
+        if (isPresent && !isCommitted && !hasTimer) {
+          const timer = window.setTimeout(() => {
+            timers.delete(letter);
+            setCommittedGreens((current) => {
+              if (current.has(letter)) return current;
+              const updated = new Set(current);
+              updated.add(letter);
+              return updated;
+            });
+          }, GREEN_COMMIT_DELAY_MS);
+          timers.set(letter, timer);
+        } else if (!isPresent && hasTimer) {
+          window.clearTimeout(timers.get(letter)!);
+          timers.delete(letter);
+        }
+      }
+
+      return next ?? prev;
+    });
+  }, [displayedAlphabet]);
+
+  // Clear any in-flight commit timers when the board unmounts.
+  useEffect(() => {
+    const timers = pendingGreenTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
 
   // Clear optimistic guess once the real state catches up. A safety timeout
   // also clears it if the server quietly drops/rejects the guess (e.g. invalid
@@ -396,9 +461,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
             </section>
 
             {(() => {
-              const sorted = Object.entries(displayedAlphabet)
-                .filter(([, state]) => state === "present")
-                .map(([letter]) => letter.toUpperCase())
+              const sorted = Array.from(committedGreens)
+                .map((letter) => letter.toUpperCase())
                 .sort();
               const displayed = greenLetterOrder && greenLetterOrder.length === sorted.length &&
                 [...greenLetterOrder].sort().join("") === sorted.join("")
