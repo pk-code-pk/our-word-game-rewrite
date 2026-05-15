@@ -15,6 +15,7 @@ import {
   searchUsers,
   sendFriendRequest,
   sendGameInvite,
+  sendGameInviteByUsername,
 } from "./friends.js";
 import { createGame, getGameState } from "./gameService.js";
 
@@ -281,6 +282,30 @@ describe("friends service", () => {
     expect(bravoOverview.friends).toHaveLength(0);
     expect(alphaOverview.outgoingGameInvites).toHaveLength(0);
     expect(bravoOverview.incomingGameInvites).toHaveLength(0);
+  });
+
+  it("lets an anonymous sender invite a registered user by username", async () => {
+    const anonSender: AuthUser = {
+      id: "anon-1",
+      email: null,
+      username: "anon-3f9a8c",
+      isAnonymous: true,
+      createdAt: Date.now(),
+    };
+    seedUser(anonSender);
+
+    const registeredReceiver = makeUser("reg-1", "alpha@example.com", "alpha");
+    seedUser(registeredReceiver);
+
+    const created = await createGame(anonSender, "GuestName", "crane", false);
+    const result = await sendGameInviteByUsername(anonSender, created.gameId, "alpha");
+
+    expect(result.inviteId).toBeTruthy();
+    expect(result.receiverDisplayName).toBe("alpha");
+
+    const receiverOverview = await listSocialOverview(registeredReceiver);
+    expect(receiverOverview.incomingGameInvites).toHaveLength(1);
+    expect(receiverOverview.incomingGameInvites[0].sender.userId).toBe(anonSender.id);
   });
 
   it("returns unauthorized for unauthenticated social routes", async () => {

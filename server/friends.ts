@@ -267,6 +267,13 @@ async function cleanupExpiredWaitingGames() {
 }
 
 async function expireInvalidPendingGameInvites() {
+  // The friendship clause guards invites sent through the friend-list path
+  // (sendGameInvite by userId, which assertRegisteredUser-gates and requires
+  // the pair to be friends). Guest/by-username invites are explicitly NOT
+  // friendship-gated — they're how anon users invite someone they don't yet
+  // know — so exempt them by skipping the friendship check whenever the
+  // sender is anonymous. Otherwise every guest invite would be expired on
+  // the receiver's next social poll and silently disappear.
   const result = await db.prepare(
     `UPDATE game_invites
      SET status = 'expired', responded_at = ?
@@ -282,19 +289,26 @@ async function expireInvalidPendingGameInvites() {
            FROM players
            WHERE players.game_id = game_invites.game_id AND players.user_id = game_invites.sender_user_id
          )
-         OR NOT EXISTS (
-           SELECT 1
-           FROM friendships
-           WHERE friendships.user_one_id = CASE
-             WHEN game_invites.sender_user_id < game_invites.receiver_user_id
-             THEN game_invites.sender_user_id
-             ELSE game_invites.receiver_user_id
-           END
-             AND friendships.user_two_id = CASE
-             WHEN game_invites.sender_user_id < game_invites.receiver_user_id
-             THEN game_invites.receiver_user_id
-             ELSE game_invites.sender_user_id
-           END
+         OR (
+           (
+             SELECT users.is_anonymous
+             FROM users
+             WHERE users.id = game_invites.sender_user_id
+           ) = 0
+           AND NOT EXISTS (
+             SELECT 1
+             FROM friendships
+             WHERE friendships.user_one_id = CASE
+               WHEN game_invites.sender_user_id < game_invites.receiver_user_id
+               THEN game_invites.sender_user_id
+               ELSE game_invites.receiver_user_id
+             END
+               AND friendships.user_two_id = CASE
+               WHEN game_invites.sender_user_id < game_invites.receiver_user_id
+               THEN game_invites.receiver_user_id
+               ELSE game_invites.sender_user_id
+             END
+           )
          )
          OR (
            SELECT COUNT(*)
