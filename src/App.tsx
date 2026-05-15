@@ -55,6 +55,8 @@ function Content() {
   );
   const [socialRefreshKey, setSocialRefreshKey] = useState(0);
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
+  const [openInbox, setOpenInbox] = useState(false);
+  const [openGuestInvites, setOpenGuestInvites] = useState(false);
 
   function refreshSocialData() {
     setSocialRefreshKey((tick) => tick + 1);
@@ -268,6 +270,8 @@ function Content() {
                 onOpenGame={(gameId) => {
                   setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                 }}
+                forceOpen={openInbox}
+                onForceOpenConsumed={() => setOpenInbox(false)}
               />
             )}
             {isGuestSignedIn && (
@@ -280,6 +284,8 @@ function Content() {
                 onOpenGame={(gameId) => {
                   setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                 }}
+                forceOpen={openGuestInvites}
+                onForceOpenConsumed={() => setOpenGuestInvites(false)}
               />
             )}
             <SignOutButton />
@@ -287,7 +293,7 @@ function Content() {
         </div>
       </header>
 
-      <main className="flex-1 px-3 py-4 sm:px-4 sm:py-6 md:px-6 lg:px-8 lg:py-8">
+      <main className="flex-1 px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
         <div className="mx-auto w-full max-w-5xl">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
@@ -330,6 +336,13 @@ function Content() {
                       setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                     }}
                     onPlayWithFriend={() => setOpenFriendsPanel(true)}
+                    onAcceptInvite={() => {
+                      if (user?.isAnonymous) {
+                        setOpenGuestInvites(true);
+                      } else {
+                        setOpenInbox(true);
+                      }
+                    }}
                   />
                 )}
               </div>

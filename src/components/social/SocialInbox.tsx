@@ -14,6 +14,8 @@ interface SocialInboxProps {
   onSocialMutated?: () => void;
   secretWord: string;
   className?: string;
+  forceOpen?: boolean;
+  onForceOpenConsumed?: () => void;
 }
 
 function formatTimestamp(timestamp: number) {
@@ -50,11 +52,20 @@ export function SocialInbox({
   onSocialMutated,
   secretWord,
   className = "",
+  forceOpen,
+  onForceOpenConsumed,
 }: SocialInboxProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
   const [submittingRequestId, setSubmittingRequestId] = useState<string | null>(null);
   const [submittingInviteId, setSubmittingInviteId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      onForceOpenConsumed?.();
+    }
+  }, [forceOpen, onForceOpenConsumed]);
 
   const canUseInbox = Boolean(user && !user.isAnonymous);
   // 5s polling + soft refetch when refreshKey changes. See GuestInvitesPanel.

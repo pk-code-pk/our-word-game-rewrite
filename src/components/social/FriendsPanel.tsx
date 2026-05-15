@@ -281,11 +281,11 @@ export function FriendsPanel({
                           type="button"
                           onClick={() => void handleQuickInvite(friend)}
                           disabled={Boolean(pendingInvite) || isBusy}
-                          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-zinc-200 bg-white text-lg font-black text-zinc-900 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex min-h-10 items-center justify-center rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900 transition hover:border-emerald-300 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40"
                           aria-label={`Invite ${friend.displayName}`}
                           title={pendingInvite ? "Invite already pending" : `Invite ${friend.displayName}`}
                         >
-                          +
+                          {pendingInvite ? "Invited" : "Invite"}
                         </button>
                         <button
                           type="button"

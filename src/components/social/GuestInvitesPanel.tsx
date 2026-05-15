@@ -15,6 +15,8 @@ interface GuestInvitesPanelProps {
   refreshKey?: number;
   onSocialMutated?: () => void;
   className?: string;
+  forceOpen?: boolean;
+  onForceOpenConsumed?: () => void;
 }
 
 function formatTimestamp(timestamp: number) {
@@ -44,6 +46,8 @@ export function GuestInvitesPanel({
   refreshKey,
   onSocialMutated,
   className = "",
+  forceOpen,
+  onForceOpenConsumed,
 }: GuestInvitesPanelProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
@@ -51,6 +55,13 @@ export function GuestInvitesPanel({
   const [isSending, setIsSending] = useState(false);
   const [submittingInviteId, setSubmittingInviteId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (forceOpen) {
+      setOpen(true);
+      onForceOpenConsumed?.();
+    }
+  }, [forceOpen, onForceOpenConsumed]);
 
   const enabled = Boolean(user);
   // 5s interval (was 2s) — the panel still feels live for invites that

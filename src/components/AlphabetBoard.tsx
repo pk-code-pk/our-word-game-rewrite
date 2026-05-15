@@ -131,6 +131,21 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
     const currentState =
       latestIntentRef.current.get(letter) ?? alphabet[letter] ?? "unknown";
     const newState = getNextAlphabetState(currentState);
+
+    // Secret words always have 5 distinct letters, so refuse to mark a sixth
+    // letter green. The user almost certainly made a mistake, and the cap
+    // matches how the server normalizes alphabet state on game-end reveal.
+    if (newState === "present") {
+      const greenCount = ALPHABET.reduce(
+        (count, l) => count + ((latestIntentRef.current.get(l) ?? alphabet[l]) === "present" ? 1 : 0),
+        0
+      );
+      if (greenCount >= 5) {
+        toast.error("You can only mark up to 5 green letters");
+        return;
+      }
+    }
+
     latestIntentRef.current.set(letter, newState);
     setOptimisticLetter(letter, newState);
     pendingStateRef.current.set(letter, newState);
@@ -185,16 +200,12 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       {/* Legend — caption under the letter grid */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-100 px-3 py-3 text-sm font-medium leading-snug text-zinc-600 lg:gap-x-5 lg:px-4 lg:text-base">
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
-            A
-          </span>
-          <span>= in the opponent&apos;s word</span>
+          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-emerald-600 bg-emerald-500 lg:h-8 lg:w-8" />
+          <span>= letter is in the opponent&apos;s word</span>
         </span>
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white lg:h-8 lg:w-8 lg:text-sm">
-            B
-          </span>
-          <span>= not in the opponent&apos;s word</span>
+          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-rose-600 bg-rose-500 lg:h-8 lg:w-8" />
+          <span>= letter is not in the opponent&apos;s word</span>
         </span>
       </div>
     </div>

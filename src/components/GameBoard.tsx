@@ -6,6 +6,7 @@ import { PresenceBadge } from "./PresenceBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
+import { isAllowedGameWord } from "../../shared/wordBank";
 
 interface GameBoardProps {
   gameId: string;
@@ -68,7 +69,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const currentPlayer = gameState?.me;
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
-  const opponentGuesses = gameState?.opponentGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
   // Clear optimistic guess once the real state catches up. A safety timeout
@@ -191,6 +191,14 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
+    // Short-circuit obvious junk before the server roundtrip. The server still
+    // has its own dictionary check; this just avoids a flicker on misspells.
+    const expectedLength = guessType === "fourLetter" ? 4 : 5;
+    if (!isAllowedGameWord(word, expectedLength)) {
+      toast.error("Not a valid word");
+      return;
+    }
+
     // Optimistically show the guess immediately
     setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType });
     setGuessText("");
@@ -295,22 +303,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
-      <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-3 border-b border-zinc-100 pb-4 sm:flex-row sm:items-start sm:justify-between">
-          <div className="space-y-1">
-            <span className="inline-flex rounded-full bg-zinc-100 px-2.5 py-0.5 text-[11px] font-semibold text-zinc-600">
-              Code {gameState.game.code}
-            </span>
-            {opponent ? (
-              <p className="text-sm text-zinc-500">Playing against {opponent.username}</p>
-            ) : (
-              <p className="text-sm text-zinc-500">Waiting for an opponent to join.</p>
-            )}
-          </div>
+      <div className="min-w-0 space-y-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2">
+        <div className="flex justify-end">
           <button
             onClick={() => void handleExit()}
             disabled={isLeavingWaitingLobby}
-            className="inline-flex w-full items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50 sm:w-auto"
+            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
           >
             {isWaitingForOpponent ? (isLeavingWaitingLobby ? "Cancelling..." : "Cancel waiting lobby") : "Back to menu"}
           </button>
@@ -359,20 +357,21 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-              <p className="text-sm font-medium text-emerald-900">
-                {opponent.username}&apos;s most recent 5-letter guess:
-              </p>
-              {(() => {
-                const latestFullWord = [...opponentGuesses].reverse().find((g) => g.type === "fullWord");
-                return latestFullWord ? (
-                  <p className="mt-2 font-mono text-2xl font-black tracking-widest text-emerald-700">
-                    {latestFullWord.text}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-sm text-emerald-700">None yet</p>
-                );
-              })()}
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+              <div className="flex items-center justify-between">
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl font-black text-emerald-700">
+                    {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
+                  </span>
+                  <span className="text-xs font-medium text-zinc-500">{currentPlayer.username}</span>
+                </div>
+                <div className="flex flex-col items-center">
+                  <span className="text-2xl font-black text-emerald-700">
+                    {opponentFoundLetterCount ?? 0}
+                  </span>
+                  <span className="text-xs font-medium text-zinc-500">{opponent.username}</span>
+                </div>
+              </div>
             </section>
 
             {(() => {
@@ -396,8 +395,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               };
               return (
                 <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-                  <p className="text-sm font-medium text-emerald-900">Your green letters:</p>
-                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
                     {displayed.map((letter) => (
                       <span
                         key={letter}
@@ -405,7 +403,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
                           else greenTileRefs.current.delete(letter.charCodeAt(0));
                         }}
-                        className="inline-flex min-w-[1.75rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 py-0.5 font-mono text-xs font-bold tracking-widest text-white"
+                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white"
                       >
                         {letter}
                       </span>
@@ -443,11 +441,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               />
             </section>
 
-            {/* Alphabet — visible inline on mobile, hidden (sidebar handles it) on desktop */}
-            <div className="lg:hidden">
-              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
-            </div>
-
             {isGameActive && (
               <form
                 ref={guessFormRef}
@@ -460,7 +453,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   value={guessText}
                   onChange={(e) => setGuessText(e.target.value.toUpperCase())}
                   placeholder={guessType === "fourLetter" ? "4-letter guess" : "5-letter guess"}
-                  maxLength={guessType === "fourLetter" ? 4 : 5}
+                  maxLength={5}
                   autoCapitalize="characters"
                   spellCheck={false}
                   className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
@@ -480,7 +473,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       }`}
                       aria-pressed={guessType === "fourLetter"}
                     >
-                      4-letter
+                      4-letter guess
                     </button>
                     <button
                       type="button"
@@ -493,7 +486,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       }`}
                       aria-pressed={guessType === "fullWord"}
                     >
-                      5-letter
+                      5-letter guess
                     </button>
                   </div>
                   <button
@@ -512,6 +505,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </div>
               </form>
             )}
+
+            {/* Alphabet — visible inline on mobile (below the composer), hidden on desktop (sidebar handles it) */}
+            <div className="lg:hidden">
+              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+            </div>
           </div>
         )}
 
