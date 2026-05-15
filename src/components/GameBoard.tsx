@@ -2,11 +2,20 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
-import { PresenceBadge } from "./PresenceBadge";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
-import { isAllowedGameWord } from "../../shared/wordBank";
+
+// Lazy-loaded so the ~130 KB word list doesn't enter the initial bundle.
+// First guess submission pays the import cost; subsequent ones hit the cache.
+let cachedWordValidator: ((word: string, len: 4 | 5) => boolean) | null = null;
+async function loadWordValidator() {
+  if (!cachedWordValidator) {
+    const mod = await import("../../shared/wordBank");
+    cachedWordValidator = mod.isAllowedGameWord;
+  }
+  return cachedWordValidator;
+}
 
 interface GameBoardProps {
   gameId: string;
@@ -194,7 +203,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     // Short-circuit obvious junk before the server roundtrip. The server still
     // has its own dictionary check; this just avoids a flicker on misspells.
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
-    if (!isAllowedGameWord(word, expectedLength)) {
+    const validate = await loadWordValidator();
+    if (!validate(word, expectedLength)) {
       toast.error("Not a valid word");
       return;
     }
@@ -259,7 +269,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   if (gameStateQuery.loading && !gameState) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-6">
           <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-100" />
           <div className="h-4 w-64 animate-pulse rounded-full bg-zinc-100" />
@@ -293,17 +303,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     );
   }
 
-  const presence = gameState.presence ?? {
-    me: "offline" as const,
-    opponent: opponent ? ("offline" as const) : null,
-  };
   const isGameActive = gameState.game.status === "active";
   const isWaitingForOpponent = gameState.game.status === "waiting";
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
-      <div className="min-w-0 space-y-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
+      <div className="min-w-0 space-y-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         <div className="flex justify-end">
           <button
             onClick={() => void handleExit()}
@@ -324,13 +330,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center shadow-sm">
             <div className="animate-pulse text-base font-medium text-zinc-600">Waiting for opponent...</div>
             <div className="mt-2 font-mono text-sm font-semibold tracking-widest text-zinc-500">{gameState.game.code}</div>
-          </div>
-        )}
-
-        {opponent && (
-          <div className="flex gap-2 rounded-lg border border-zinc-100 bg-zinc-50 p-2">
-            <PresenceBadge status={presence.me} label="You" />
-            <PresenceBadge status={presence.opponent} label={opponent.username} />
           </div>
         )}
 
@@ -357,21 +356,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
-              <div className="flex items-center justify-between">
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl font-black text-emerald-700">
-                    {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
-                  </span>
-                  <span className="text-xs font-medium text-zinc-500">{currentPlayer.username}</span>
-                </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl font-black text-emerald-700">
-                    {opponentFoundLetterCount ?? 0}
-                  </span>
-                  <span className="text-xs font-medium text-zinc-500">{opponent.username}</span>
-                </div>
-              </div>
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-6 lg:py-4">
+              <p className="text-center text-sm font-medium text-zinc-700 lg:text-base">
+                {opponent.username} has found{" "}
+                <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
+              </p>
             </section>
 
             {(() => {
@@ -394,8 +383,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 setGreenLetterOrder(arr);
               };
               return (
-                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3 lg:px-6 lg:py-4">
+                  <div className="flex flex-wrap items-center gap-1.5 lg:gap-2.5">
                     {displayed.map((letter) => (
                       <span
                         key={letter}
@@ -403,7 +392,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
                           else greenTileRefs.current.delete(letter.charCodeAt(0));
                         }}
-                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white"
+                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white lg:min-w-[3rem] lg:px-3 lg:py-2 lg:text-xl"
                       >
                         {letter}
                       </span>
@@ -554,14 +543,14 @@ function GuessColumn(props: {
   return (
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
-        <span className="text-sm font-semibold text-zinc-700"># of letters in opponent&apos;s word</span>
+        <h3 className="text-sm font-semibold text-zinc-700 lg:text-base">{props.title}</h3>
+        <span className="text-sm font-semibold text-zinc-700 lg:text-base"># of letters in opponent&apos;s word</span>
       </div>
       <div
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(10rem,20dvh)]"
+        className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(14rem,28dvh)]"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {allGuesses.length === 0 ? (
@@ -570,7 +559,7 @@ function GuessColumn(props: {
           allGuesses.map((guess) => (
             <div
               key={guess.id}
-              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
             >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}

@@ -130,19 +130,18 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
     // so rapid taps always advance through unknown → present → absent → unknown.
     const currentState =
       latestIntentRef.current.get(letter) ?? alphabet[letter] ?? "unknown";
-    const newState = getNextAlphabetState(currentState);
+    let newState = getNextAlphabetState(currentState);
 
-    // Secret words always have 5 distinct letters, so refuse to mark a sixth
-    // letter green. The user almost certainly made a mistake, and the cap
-    // matches how the server normalizes alphabet state on game-end reveal.
+    // Secret words always have 5 distinct letters, so don't let users land
+    // a sixth green by accident — but still let them rule out the letter
+    // (route to "absent") so the click isn't a dead end.
     if (newState === "present") {
       const greenCount = ALPHABET.reduce(
         (count, l) => count + ((latestIntentRef.current.get(l) ?? alphabet[l]) === "present" ? 1 : 0),
         0
       );
       if (greenCount >= 5) {
-        toast.error("You can only mark up to 5 green letters");
-        return;
+        newState = "absent";
       }
     }
 
@@ -155,7 +154,7 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
   const getLetterStyle = (letter: string) => {
     const state = getDisplayedState(letter);
     let base =
-      "flex h-7 w-full items-center justify-center rounded border-2 text-[11px] font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-8 lg:text-xs";
+      "flex h-7 w-full items-center justify-center rounded border-2 text-[11px] font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-11 lg:text-base lg:rounded-lg";
 
     if (disabled) {
       base += " cursor-not-allowed opacity-40";
@@ -180,7 +179,7 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
         <h3 className="text-sm font-semibold text-zinc-900">Alphabet</h3>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 p-2 lg:gap-1.5 lg:p-3">
+      <div className="grid grid-cols-7 gap-1 p-2 lg:gap-2 lg:p-4">
         {ALPHABET.map((letter) => (
           <button
             key={letter}
@@ -198,13 +197,13 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       </div>
 
       {/* Legend — caption under the letter grid */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-100 px-3 py-3 text-sm font-medium leading-snug text-zinc-600 lg:gap-x-5 lg:px-4 lg:text-base">
+      <div className="flex flex-col gap-2 border-t border-zinc-100 px-3 py-3 text-xs font-medium text-zinc-600 lg:gap-3 lg:px-5 lg:py-4 lg:text-base">
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-emerald-600 bg-emerald-500 lg:h-8 lg:w-8" />
+          <span className="flex h-6 w-6 shrink-0 rounded border-2 border-emerald-600 bg-emerald-500 lg:h-8 lg:w-8" />
           <span>= letter is in the opponent&apos;s word</span>
         </span>
         <span className="flex items-center gap-2">
-          <span className="flex h-7 w-7 shrink-0 rounded border-2 border-rose-600 bg-rose-500 lg:h-8 lg:w-8" />
+          <span className="flex h-6 w-6 shrink-0 rounded border-2 border-rose-600 bg-rose-500 lg:h-8 lg:w-8" />
           <span>= letter is not in the opponent&apos;s word</span>
         </span>
       </div>
