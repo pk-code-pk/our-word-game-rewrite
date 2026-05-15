@@ -5,7 +5,14 @@ import { AlphabetBoard } from "./AlphabetBoard";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
-import { isAllowedGameWord } from "../../shared/wordBank";
+let _isAllowedGameWord: ((word: string, len: 4 | 5) => boolean) | null = null;
+async function loadWordValidator() {
+  if (!_isAllowedGameWord) {
+    const mod = await import("../../shared/wordBank");
+    _isAllowedGameWord = mod.isAllowedGameWord;
+  }
+  return _isAllowedGameWord;
+}
 
 interface GameBoardProps {
   gameId: string;
@@ -182,7 +189,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     }
 
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
-    if (!isAllowedGameWord(word, expectedLength)) {
+    const validate = await loadWordValidator();
+    if (!validate(word, expectedLength)) {
       toast.error("Not a valid word");
       return;
     }
@@ -247,7 +255,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   if (gameStateQuery.loading && !gameState) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
         <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-6">
           <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-100" />
           <div className="h-4 w-64 animate-pulse rounded-full bg-zinc-100" />
@@ -290,8 +298,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-5">
-      <div className="min-w-0 space-y-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
+      <div className="min-w-0 space-y-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         <div className="flex justify-end">
           <button
             onClick={() => void handleExit()}
@@ -338,17 +346,17 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3">
+            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-8 lg:py-5">
               <div className="flex items-center justify-between">
                 <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium text-zinc-600">You</span>
-                  <span className="text-3xl font-black text-emerald-700">
+                  <span className="text-sm font-medium text-zinc-600 lg:text-base">You</span>
+                  <span className="text-3xl font-black text-emerald-700 lg:text-5xl">
                     {Object.values(currentPlayer.alphabet).filter((s) => s === "present").length}
                   </span>
                 </div>
                 <div className="flex flex-col items-center">
-                  <span className="text-sm font-medium text-zinc-600">{opponent.username}</span>
-                  <span className="text-3xl font-black text-emerald-700">
+                  <span className="text-sm font-medium text-zinc-600 lg:text-base">{opponent.username}</span>
+                  <span className="text-3xl font-black text-emerald-700 lg:text-5xl">
                     {opponentFoundLetterCount ?? 0}
                   </span>
                 </div>
@@ -375,15 +383,15 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 setGreenLetterOrder(arr);
               };
               return (
-                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-                  <div className="flex flex-wrap items-center gap-1.5">
+                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3 lg:px-6 lg:py-4">
+                  <div className="flex flex-wrap items-center gap-1.5 lg:gap-2.5">
                     {displayed.map((letter, i) => (
                       <span
                         key={letter}
                         ref={(el) => {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
                         }}
-                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white"
+                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white lg:min-w-[3rem] lg:px-3 lg:py-2 lg:text-xl"
                       >
                         {letter}
                       </span>
@@ -406,20 +414,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </section>
               );
             })()}
-
-            <section>
-              <GuessColumn
-                title="Your guesses"
-                elementId="my-guesses"
-                guesses={myGuesses}
-                optimisticGuess={optimisticGuess}
-                emptyText="No guesses yet"
-                scrollRef={myGuessesRef}
-                onScroll={() => {
-                  keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
-                }}
-              />
-            </section>
 
             {isGameActive && (
               <form
@@ -486,6 +480,20 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               </form>
             )}
 
+            <section>
+              <GuessColumn
+                title="Your guesses"
+                elementId="my-guesses"
+                guesses={myGuesses}
+                optimisticGuess={optimisticGuess}
+                emptyText="No guesses yet"
+                scrollRef={myGuessesRef}
+                onScroll={() => {
+                  keepMyGuessesPinnedRef.current = isNearBottom(myGuessesRef.current);
+                }}
+              />
+            </section>
+
             {/* Alphabet — visible inline on mobile (at bottom), hidden on desktop (sidebar handles it) */}
             <div className="lg:hidden">
               <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
@@ -534,14 +542,14 @@ function GuessColumn(props: {
   return (
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">
       <div className="mb-3 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-700">{props.title}</h3>
-        <h3 className="text-sm font-semibold text-zinc-700"># of letters in opponent&apos;s word</h3>
+        <h3 className="text-sm font-semibold text-zinc-700 lg:text-base">{props.title}</h3>
+        <h3 className="text-sm font-semibold text-zinc-700 lg:text-base"># of letters in opponent&apos;s word</h3>
       </div>
       <div
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(10rem,20dvh)]"
+        className="h-[min(8rem,16dvh)] min-h-0 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 sm:h-[min(10rem,20dvh)] lg:h-[min(14rem,28dvh)]"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {allGuesses.length === 0 ? (
@@ -550,7 +558,7 @@ function GuessColumn(props: {
           allGuesses.map((guess) => (
             <div
               key={guess.id}
-              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
             >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}
