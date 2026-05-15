@@ -182,11 +182,11 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-zinc-100 px-3 py-3 text-sm font-medium leading-snug text-zinc-600 lg:gap-x-5 lg:px-4 lg:text-base">
         <span className="flex items-center gap-2">
           <span className="flex h-7 w-7 shrink-0 rounded border-2 border-emerald-600 bg-emerald-500 lg:h-8 lg:w-8" />
-          <span>= in the opponent&apos;s word</span>
+          <span>= letter is in the opponent&apos;s word</span>
         </span>
         <span className="flex items-center gap-2">
           <span className="flex h-7 w-7 shrink-0 rounded border-2 border-rose-600 bg-rose-500 lg:h-8 lg:w-8" />
-          <span>= not in the opponent&apos;s word</span>
+          <span>= letter is not in the opponent&apos;s word</span>
         </span>
       </div>
     </div>

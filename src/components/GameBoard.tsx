@@ -346,20 +346,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="space-y-3 lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3">
-              <p className="text-sm font-medium text-emerald-900">
-                {opponent.username}&apos;s last 5-letter guess:
+            <section className="rounded-xl border border-zinc-200 bg-amber-50 px-4 py-3">
+              <p className="text-sm font-medium text-amber-900">
+                {opponent.username} has found{" "}
+                <span className="font-bold">{opponentFoundLetterCount ?? 0}</span> of your word&apos;s 5 letters
               </p>
-              {(() => {
-                const latestFullWord = [...opponentGuesses].reverse().find((g) => g.type === "fullWord");
-                return latestFullWord ? (
-                  <p className="mt-2 font-mono text-2xl font-black tracking-widest text-emerald-700">
-                    {latestFullWord.text}
-                  </p>
-                ) : (
-                  <p className="mt-1 text-sm text-emerald-700">None yet</p>
-                );
-              })()}
             </section>
 
             {(() => {
@@ -428,11 +419,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               />
             </section>
 
-            {/* Alphabet — visible inline on mobile, hidden (sidebar handles it) on desktop */}
-            <div className="lg:hidden">
-              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
-            </div>
-
             {isGameActive && (
               <form
                 ref={guessFormRef}
@@ -497,6 +483,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </div>
               </form>
             )}
+
+            {/* Alphabet — visible inline on mobile (at bottom), hidden on desktop (sidebar handles it) */}
+            <div className="lg:hidden">
+              <AlphabetBoard gameId={gameId} alphabet={currentPlayer.alphabet} disabled={!isGameActive} />
+            </div>
           </div>
         )}
 
