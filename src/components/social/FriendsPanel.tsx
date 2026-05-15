@@ -52,7 +52,6 @@ export function FriendsPanel({
       onForceOpenConsumed?.();
     }
   }, [forceOpen, onForceOpenConsumed]);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [showAddFriend, setShowAddFriend] = useState(false);
   const [addUsername, setAddUsername] = useState("");
   const [isAddingFriend, setIsAddingFriend] = useState(false);
@@ -60,10 +59,18 @@ export function FriendsPanel({
   const addInputRef = useRef<HTMLInputElement | null>(null);
 
   const canUseFriends = Boolean(user && !user.isAnonymous);
-  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
-    intervalMs: 2000,
+  // 5s polling + soft refetch when refreshKey changes. See GuestInvitesPanel
+  // for the rationale.
+  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [], {
+    intervalMs: 5000,
     enabled: canUseFriends,
   });
+  const { refetch: refetchSocial } = socialQuery;
+
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    refetchSocial();
+  }, [refreshKey, refetchSocial]);
 
   const social = socialQuery.data?.social;
   const friends = social?.friends ?? [];
@@ -73,10 +80,6 @@ export function FriendsPanel({
     () => new Map(outgoingPendingInvites.map((invite) => [invite.receiver.userId, invite] as const)),
     [outgoingPendingInvites]
   );
-
-  async function refreshSocial() {
-    setRefreshTick((tick) => tick + 1);
-  }
 
   async function handleAddFriend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -93,7 +96,7 @@ export function FriendsPanel({
       toast.success(response.becameFriends ? "You are now friends." : "Friend request sent.");
       setAddUsername("");
       setShowAddFriend(false);
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to send friend request.");
@@ -107,7 +110,7 @@ export function FriendsPanel({
     try {
       await api.removeFriend(friend.userId);
       toast.success(`${friend.displayName} removed from friends.`);
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to remove friend.");
@@ -131,7 +134,7 @@ export function FriendsPanel({
     try {
       await onQuickInvite(friend);
       setOpen(false);
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to invite friend.");

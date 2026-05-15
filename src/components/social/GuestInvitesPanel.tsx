@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { GameInviteView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
@@ -47,17 +47,28 @@ export function GuestInvitesPanel({
 }: GuestInvitesPanelProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [inviteUsername, setInviteUsername] = useState("");
   const [isSending, setIsSending] = useState(false);
   const [submittingInviteId, setSubmittingInviteId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const enabled = Boolean(user);
-  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
-    intervalMs: 2000,
+  // 5s interval (was 2s) — the panel still feels live for invites that
+  // typically arrive over many seconds, while halving render churn.
+  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [], {
+    intervalMs: 5000,
     enabled,
   });
+  const { refetch: refetchSocial } = socialQuery;
+
+  // refreshKey is bumped by sibling social panels (and by our own mutations
+  // through onSocialMutated). React to it with a soft refetch instead of
+  // listing it in usePollingQuery's deps — that previously restarted the
+  // entire polling loop, clearing error state and toggling loading flags.
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    refetchSocial();
+  }, [refreshKey, refetchSocial]);
 
   const social = socialQuery.data?.social;
   const incoming = useMemo(
@@ -77,10 +88,6 @@ export function GuestInvitesPanel({
 
   const joinDisplayName = displayName?.trim() || user?.username?.trim() || "";
 
-  async function refreshSocial() {
-    setRefreshTick((tick) => tick + 1);
-  }
-
   async function handleSubmitSend(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const username = inviteUsername.trim();
@@ -93,7 +100,7 @@ export function GuestInvitesPanel({
     try {
       await onSendInvite(username);
       setInviteUsername("");
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to send invite.");
@@ -107,7 +114,7 @@ export function GuestInvitesPanel({
     try {
       await api.cancelGameInvite(invite.inviteId);
       toast.success("Invite cancelled.");
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to cancel invite.");
@@ -134,7 +141,7 @@ export function GuestInvitesPanel({
         secretWord: normalizedSecretWord,
       });
       toast.success("Invite accepted. Joining game...");
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
       setOpen(false);
       onOpenGame?.(response.gameId);
@@ -150,7 +157,7 @@ export function GuestInvitesPanel({
     try {
       await api.declineGameInvite(invite.inviteId);
       toast.success("Invite declined.");
-      await refreshSocial();
+      refetchSocial();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to decline invite.");
@@ -207,6 +214,7 @@ export function GuestInvitesPanel({
         onClose={() => setOpen(false)}
         title="Invites"
         size="md"
+        initialFocusRef={inputRef}
         contentClassName="space-y-4"
         footer={footer}
       >

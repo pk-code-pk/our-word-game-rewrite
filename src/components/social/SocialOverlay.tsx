@@ -89,6 +89,24 @@ export function SocialOverlay({
   const [isMounted, setIsMounted] = useState(open);
   const [isVisible, setIsVisible] = useState(open);
 
+  // The focus-management effect below intentionally depends only on `open`.
+  // `onClose` and `initialFocusRef` are passed as fresh references on every
+  // parent render (callers use inline arrow functions). If they were part of
+  // the effect's deps, the effect would tear down and re-run on each parent
+  // render — restoring focus on cleanup and re-focusing the first focusable
+  // element on re-run. With a polling parent that re-renders every couple of
+  // seconds, that stole focus away from any input inside the overlay
+  // mid-keystroke. Reading them through refs keeps the handler current
+  // without retriggering the effect.
+  const onCloseRef = useRef(onClose);
+  const initialFocusRefRef = useRef(initialFocusRef);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+  useEffect(() => {
+    initialFocusRefRef.current = initialFocusRef;
+  }, [initialFocusRef]);
+
   const panelSizeClass = useMemo(() => SIZE_CLASS_MAP[size], [size]);
   const resolvedLabelledBy = labelledBy ?? titleId;
   const resolvedDescribedBy = describedBy ?? (subtitle ? subtitleId : undefined);
@@ -129,7 +147,7 @@ export function SocialOverlay({
         return;
       }
 
-      const preferred = initialFocusRef?.current;
+      const preferred = initialFocusRefRef.current?.current;
       if (preferred && panel.contains(preferred)) {
         focusSafely(preferred);
         return;
@@ -149,7 +167,7 @@ export function SocialOverlay({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
 
@@ -200,7 +218,7 @@ export function SocialOverlay({
         previousActive.focus({ preventScroll: true });
       }
     };
-  }, [initialFocusRef, onClose, open]);
+  }, [open]);
 
   if (!isMounted || typeof document === "undefined") {
     return null;

@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { ApiError } from "./api";
 import { isDocumentVisible, stabilizeJsonValue } from "./pollingUtils";
 
@@ -18,6 +18,12 @@ export interface PollingQueryResult<T> {
   refreshing: boolean;
   lastUpdatedAt: number | null;
   isPaused: boolean;
+  /**
+   * Trigger an immediate refetch for the current effect generation without
+   * tearing down the polling loop. Safe to call from event handlers and
+   * effects; callers do not need to await this.
+   */
+  refetch: () => void;
 }
 
 export function usePollingQuery<T>(
@@ -47,6 +53,10 @@ export function usePollingQuery<T>(
   const visibleRef = useRef(isDocumentVisible());
   const consecutiveErrorsRef = useRef(0);
   const authBlockedRef = useRef(false);
+  // Holds the latest run() bound to the current effect generation so the
+  // public refetch callback can be a stable reference but still kick the
+  // active poll loop, not a stale closure.
+  const refetchImplRef = useRef<(() => void) | null>(null);
 
   loaderRef.current = loader;
 
@@ -236,6 +246,21 @@ export function usePollingQuery<T>(
       setRefreshing(false);
     }
 
+    // Bind refetch to this effect generation. If a refetch fires while a
+    // request is already in flight we skip — the in-flight response will
+    // arrive shortly and call setStableData, which is what refetch wants
+    // anyway. Otherwise we cancel the scheduled next poll and run now.
+    refetchImplRef.current = () => {
+      if (effectGenerationRef.current !== effectGeneration || !enabled) {
+        return;
+      }
+      if (inFlightRef.current) {
+        return;
+      }
+      clearTimeouts();
+      void run(effectGeneration);
+    };
+
     void run(effectGeneration);
 
     if (typeof document !== "undefined" && pauseWhenHidden) {
@@ -250,6 +275,7 @@ export function usePollingQuery<T>(
       cancelled = true;
       effectGenerationRef.current += 1;
       clearTimeouts();
+      refetchImplRef.current = null;
 
       if (typeof document !== "undefined" && pauseWhenHidden) {
         document.removeEventListener("visibilitychange", syncVisibility);
@@ -261,5 +287,9 @@ export function usePollingQuery<T>(
     };
   }, [enabled, intervalMs, pauseWhenHidden, refreshIndicatorDelayMs, ...deps]);
 
-  return { data, error, loading, refreshing, lastUpdatedAt, isPaused };
+  const refetch = useCallback(() => {
+    refetchImplRef.current?.();
+  }, []);
+
+  return { data, error, loading, refreshing, lastUpdatedAt, isPaused, refetch };
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { FriendRequestView, GameInviteView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
@@ -53,15 +53,21 @@ export function SocialInbox({
 }: SocialInboxProps) {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
   const [submittingRequestId, setSubmittingRequestId] = useState<string | null>(null);
   const [submittingInviteId, setSubmittingInviteId] = useState<string | null>(null);
 
   const canUseInbox = Boolean(user && !user.isAnonymous);
-  const inboxQuery = usePollingQuery(() => api.getSocialOverview(), [refreshTick, refreshKey], {
-    intervalMs: 2000,
+  // 5s polling + soft refetch when refreshKey changes. See GuestInvitesPanel.
+  const inboxQuery = usePollingQuery(() => api.getSocialOverview(), [], {
+    intervalMs: 5000,
     enabled: canUseInbox,
   });
+  const { refetch: refetchInbox } = inboxQuery;
+
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    refetchInbox();
+  }, [refreshKey, refetchInbox]);
 
   const social = inboxQuery.data?.social;
   const incomingRequests = social?.incomingRequests ?? [];
@@ -80,10 +86,6 @@ export function SocialInbox({
     [incomingGameInvites]
   );
 
-  async function refreshInbox() {
-    setRefreshTick((tick) => tick + 1);
-  }
-
   async function handleRequestAction(request: FriendRequestView, action: "accept" | "decline") {
     setSubmittingRequestId(request.requestId);
     try {
@@ -94,7 +96,7 @@ export function SocialInbox({
         await api.declineFriendRequest(request.requestId);
         toast.success("Friend request declined.");
       }
-      await refreshInbox();
+      refetchInbox();
       onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update request.");
@@ -109,7 +111,7 @@ export function SocialInbox({
       if (action === "decline") {
         await api.declineGameInvite(invite.inviteId);
         toast.success("Game invite declined.");
-        await refreshInbox();
+        refetchInbox();
         onSocialMutated?.();
         return;
       }
@@ -130,7 +132,7 @@ export function SocialInbox({
         secretWord: normalizedSecretWord,
       });
       toast.success("Invite accepted. Joining game...");
-      await refreshInbox();
+      refetchInbox();
       onSocialMutated?.();
       setOpen(false);
       onOpenGame?.(response.gameId);
