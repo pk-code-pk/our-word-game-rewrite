@@ -118,13 +118,12 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
     }
 
     const currentState = getDisplayedState(letter);
-    const newState = getNextAlphabetState(currentState);
+    let newState = getNextAlphabetState(currentState);
 
     if (newState === "present") {
       const greenCount = ALPHABET.filter((l) => getDisplayedState(l) === "present").length;
       if (greenCount >= 5) {
-        toast.error("You can only mark up to 5 green letters");
-        return;
+        newState = "absent";
       }
     }
 
