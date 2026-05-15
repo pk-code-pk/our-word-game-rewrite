@@ -235,7 +235,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
     setIsSubmitting(true);
     try {
-      const result = await api.submitGuess(gameId, { type: guessType, text: word });
+      const result = await gameStateQuery.submitGuess({ type: guessType, text: word });
       setOptimisticGuess((row) =>
         row && row.text === word && row.type === guessType
           ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
@@ -389,7 +389,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 .filter(([, state]) => state === "present")
                 .map(([letter]) => letter.toUpperCase())
                 .sort();
-              if (sorted.length === 0) return null;
+              // Shuffling fewer than 5 greens isn't strategically useful since
+              // the secret word is exactly 5 distinct letters — only show the
+              // section once the player has narrowed the set down completely.
+              if (sorted.length < 5) return null;
               const displayed = greenLetterOrder && greenLetterOrder.length === sorted.length &&
                 [...greenLetterOrder].sort().join("") === sorted.join("")
                 ? greenLetterOrder

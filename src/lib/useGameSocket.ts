@@ -1,10 +1,26 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { GameStateView } from "../../shared/types";
 import { api, getStoredToken } from "./api";
 
 // Delay before falling back to HTTP polling. Lets the WS connection establish
 // (typically <500ms) without two transports racing each other on initial mount.
 const POLL_FALLBACK_DELAY_MS = 1_500;
+// If the server doesn't acknowledge a WS-submitted guess within this window,
+// fall back to HTTP. Empirically a healthy round-trip is <300ms even on slow
+// connections — anything longer means the socket is wedged.
+const WS_SUBMIT_TIMEOUT_MS = 3_000;
+
+export interface SubmitGuessResult {
+  matchCount: number;
+  isCorrect: boolean;
+  guessNumber: number;
+  gameStatus: "active" | "completed";
+}
+
+export interface SubmitGuessPayload {
+  type: "fourLetter" | "fullWord";
+  text: string;
+}
 
 export interface GameSocketResponse {
   gameState: GameStateView | null;
@@ -15,13 +31,27 @@ export interface GameSocketResult {
   error: Error | null;
   loading: boolean;
   connected: boolean;
+  submitGuess: (payload: SubmitGuessPayload) => Promise<SubmitGuessResult>;
 }
 
 type ServerMessage =
   | { type: "gameState"; state: GameStateView }
   | { type: "gameEnded"; gameId: string }
   | { type: "error"; message: string }
-  | { type: "pong" };
+  | { type: "pong" }
+  | {
+      type: "guessResult";
+      requestId: string;
+      ok: boolean;
+      result?: SubmitGuessResult;
+      error?: string;
+    };
+
+interface PendingSubmission {
+  resolve: (value: SubmitGuessResult) => void;
+  reject: (reason: Error) => void;
+  timeoutId: number;
+}
 
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const MAX_RECONNECT_DELAY_MS = 30_000;
@@ -46,6 +76,13 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
   const dataRef = useRef<GameSocketResponse | undefined>(undefined);
   const connectedRef = useRef(false);
+  // Holds the live socket so the public submitGuess callback can use it
+  // without being recreated every render. The ref is set inside the effect
+  // and cleared on cleanup.
+  const wsRef = useRef<WebSocket | null>(null);
+  const pendingSubmissionsRef = useRef<Map<string, PendingSubmission>>(new Map());
+  const gameIdRef = useRef<string | null>(gameId);
+  gameIdRef.current = gameId;
 
   useEffect(() => {
     dataRef.current = undefined;
@@ -62,6 +99,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
     let cancelled = false;
     let ws: WebSocket | null = null;
+    wsRef.current = null;
     let reconnectAttempt = 0;
     let reconnectTimer: number | null = null;
     let pingTimer: number | null = null;
@@ -167,6 +205,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
       try {
         ws = new WebSocket(buildSocketUrl());
+        wsRef.current = ws;
       } catch (cause) {
         applyError(cause);
         scheduleReconnect();
@@ -230,6 +269,20 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
             return;
           case "pong":
             return;
+          case "guessResult": {
+            const pending = pendingSubmissionsRef.current.get(parsed.requestId);
+            if (!pending) {
+              return;
+            }
+            pendingSubmissionsRef.current.delete(parsed.requestId);
+            window.clearTimeout(pending.timeoutId);
+            if (parsed.ok && parsed.result) {
+              pending.resolve(parsed.result);
+            } else {
+              pending.reject(new Error(parsed.error ?? "Unable to submit guess."));
+            }
+            return;
+          }
         }
       };
 
@@ -241,6 +294,17 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
         clearPing();
         connectedRef.current = false;
         setConnected(false);
+        if (wsRef.current === ws) {
+          wsRef.current = null;
+        }
+        // Any submissions still pending on this socket will never see a reply
+        // here — reject them so submitGuess() can transparently fall back to
+        // HTTP. The submitGuess function catches this and retries.
+        for (const [requestId, pending] of pendingSubmissionsRef.current) {
+          window.clearTimeout(pending.timeoutId);
+          pending.reject(new Error("WebSocket disconnected."));
+          pendingSubmissionsRef.current.delete(requestId);
+        }
         if (cancelled) return;
 
         if (event.code === 1000) return;
@@ -284,6 +348,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       clearPoll();
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("focus", handleVisibilityChange);
+      for (const [requestId, pending] of pendingSubmissionsRef.current) {
+        window.clearTimeout(pending.timeoutId);
+        pending.reject(new Error("WebSocket closed."));
+        pendingSubmissionsRef.current.delete(requestId);
+      }
       if (ws) {
         ws.onopen = null;
         ws.onmessage = null;
@@ -295,9 +364,55 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
           // ignore
         }
         ws = null;
+        wsRef.current = null;
       }
     };
   }, [gameId]);
 
-  return { data, error, loading, connected };
+  const submitGuess = useCallback(
+    async (payload: SubmitGuessPayload): Promise<SubmitGuessResult> => {
+      const currentGameId = gameIdRef.current;
+      const socket = wsRef.current;
+      if (currentGameId && socket && socket.readyState === WebSocket.OPEN) {
+        const requestId = `g-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        try {
+          const result = await new Promise<SubmitGuessResult>((resolve, reject) => {
+            const timeoutId = window.setTimeout(() => {
+              pendingSubmissionsRef.current.delete(requestId);
+              reject(new Error("WebSocket submit timed out."));
+            }, WS_SUBMIT_TIMEOUT_MS);
+            pendingSubmissionsRef.current.set(requestId, { resolve, reject, timeoutId });
+            try {
+              socket.send(
+                JSON.stringify({
+                  type: "submitGuess",
+                  requestId,
+                  gameId: currentGameId,
+                  guessType: payload.type,
+                  text: payload.text,
+                })
+              );
+            } catch (cause) {
+              window.clearTimeout(timeoutId);
+              pendingSubmissionsRef.current.delete(requestId);
+              reject(cause instanceof Error ? cause : new Error("Failed to send guess."));
+            }
+          });
+          return result;
+        } catch {
+          // Fall through to HTTP. We swallow this error because the HTTP path
+          // is authoritative and will surface its own error if the guess is
+          // genuinely invalid (rather than just a transport hiccup).
+        }
+      }
+
+      if (!currentGameId) {
+        throw new Error("No active game.");
+      }
+      return api.submitGuess(currentGameId, payload);
+    },
+    []
+  );
+
+  return { data, error, loading, connected, submitGuess };
 }

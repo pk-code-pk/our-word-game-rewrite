@@ -1,7 +1,7 @@
 import type { Server as HttpServer } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { getUserFromSessionId, parseSessionIdFromCookieHeader } from "./auth.js";
-import { getGameState } from "./gameService.js";
+import { getGameState, submitGuess } from "./gameService.js";
 import { onGameEvent } from "./gameEvents.js";
 import type { AuthUser } from "./types.js";
 
@@ -11,7 +11,14 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 type SubscribeMessage = { type: "subscribe"; gameId: string };
 type UnsubscribeMessage = { type: "unsubscribe" };
 type PingMessage = { type: "ping" };
-type ClientMessage = SubscribeMessage | UnsubscribeMessage | PingMessage;
+type SubmitGuessMessage = {
+  type: "submitGuess";
+  requestId: string;
+  gameId: string;
+  guessType: "fourLetter" | "fullWord";
+  text: string;
+};
+type ClientMessage = SubscribeMessage | UnsubscribeMessage | PingMessage | SubmitGuessMessage;
 
 type ClientSocket = WebSocket & {
   isAlive: boolean;
@@ -85,6 +92,29 @@ async function handleSubscribe(socket: ClientSocket, gameId: string) {
   }
 }
 
+async function handleSubmitGuessMessage(socket: ClientSocket, msg: SubmitGuessMessage) {
+  if (!socket.user) {
+    safeSend(socket, { type: "guessResult", requestId: msg.requestId, ok: false, error: "Not authenticated." });
+    return;
+  }
+  if (typeof msg.gameId !== "string" || !msg.gameId) {
+    safeSend(socket, { type: "guessResult", requestId: msg.requestId, ok: false, error: "Invalid gameId." });
+    return;
+  }
+  if (msg.guessType !== "fourLetter" && msg.guessType !== "fullWord") {
+    safeSend(socket, { type: "guessResult", requestId: msg.requestId, ok: false, error: "Invalid guess type." });
+    return;
+  }
+
+  try {
+    const result = await submitGuess(socket.user, msg.gameId, msg.guessType, msg.text ?? "");
+    safeSend(socket, { type: "guessResult", requestId: msg.requestId, ok: true, result });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to submit guess.";
+    safeSend(socket, { type: "guessResult", requestId: msg.requestId, ok: false, error: message });
+  }
+}
+
 function handleClientMessage(socket: ClientSocket, raw: string) {
   let parsed: ClientMessage;
   try {
@@ -103,6 +133,9 @@ function handleClientMessage(socket: ClientSocket, raw: string) {
       return;
     case "ping":
       safeSend(socket, { type: "pong" });
+      return;
+    case "submitGuess":
+      void handleSubmitGuessMessage(socket, parsed);
       return;
     default:
       safeSend(socket, { type: "error", message: "Unknown message type." });
