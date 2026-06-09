@@ -20,6 +20,12 @@ import {
   type PlayState,
 } from "./lib/playState";
 import { usePollingQuery } from "./lib/usePollingQuery";
+import {
+  buildInviteUrl,
+  clearInviteCodeFromUrl,
+  readInviteCodeFromUrl,
+  shareInvite,
+} from "./lib/invite";
 
 function isRecoverableInviteLobbyError(message: string) {
   return /waiting game not found|game not found|no longer available|already started|game is full/i.test(message);
@@ -52,6 +58,7 @@ function Content() {
   const [socialRefreshKey, setSocialRefreshKey] = useState(0);
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
   const [openInbox, setOpenInbox] = useState(false);
+  const [pendingJoinCode, setPendingJoinCode] = useState<string>(() => readInviteCodeFromUrl());
 
   function refreshSocialData() {
     setSocialRefreshKey((tick) => tick + 1);
@@ -63,6 +70,15 @@ function Content() {
     }
     writeStoredPlayState(user.id, playState);
   }, [playState, user?.id]);
+
+  useEffect(() => {
+    if (pendingJoinCode && playState.gamePhase === "playing" && playState.currentGameId) {
+      toast(`You have an invite to match ${pendingJoinCode}. Leave this game to join it.`, {
+        id: "pending-invite",
+        duration: 6000,
+      });
+    }
+  }, [pendingJoinCode, playState.gamePhase, playState.currentGameId]);
 
   const { username, secretWord, currentGameId, gamePhase, lobbyCode: gameCode, isPublic } = playState;
 
@@ -144,6 +160,42 @@ function Content() {
           : new Error("Your room was created, but the invite could not be sent.");
       }
       throw error instanceof Error ? error : new Error("Unable to create the room right now.");
+    }
+  }
+
+  async function handleJoinByInviteCode(): Promise<void> {
+    const trimmedUsername = username.trim();
+    const result = await api.joinGame({
+      code: pendingJoinCode,
+      username: trimmedUsername,
+      secretWord,
+    });
+    clearInviteCodeFromUrl();
+    setPendingJoinCode("");
+    setPlayState((prev) => ({ ...prev, currentGameId: result.gameId, gamePhase: "playing", lobbyCode: "" }));
+  }
+
+  function dismissInvite(): void {
+    clearInviteCodeFromUrl();
+    setPendingJoinCode("");
+  }
+
+  async function handleCreateAndShareInvite(): Promise<void> {
+    const trimmedUsername = username.trim();
+
+    const game = reusableWaitingGame
+      ? { gameId: reusableWaitingGame.gameId, code: reusableWaitingGame.code }
+      : await api.createGame({ username: trimmedUsername, secretWord, public: false });
+
+    try {
+      const outcome = await shareInvite({ code: game.code, hostName: trimmedUsername });
+      if (outcome === "copied") {
+        toast.success("Invite link copied — paste it to a friend!");
+      } else if (outcome === "unsupported") {
+        toast(`Share this link to invite a friend: ${buildInviteUrl(game.code)}`, { duration: 8000 });
+      }
+    } finally {
+      setPlayState((prev) => ({ ...prev, currentGameId: game.gameId, gamePhase: "playing", lobbyCode: "" }));
     }
   }
 
@@ -239,6 +291,10 @@ function Content() {
                     }}
                     onPlayWithFriend={() => setOpenFriendsPanel(true)}
                     onAcceptInvite={() => setOpenInbox(true)}
+                    inviteCode={pendingJoinCode || null}
+                    onJoinByInviteCode={handleJoinByInviteCode}
+                    onDismissInvite={dismissInvite}
+                    onShareInvite={handleCreateAndShareInvite}
                   />
                 )}
               </div>
