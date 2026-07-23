@@ -14,7 +14,7 @@ import {
   signInAnonymously,
   signUp,
 } from "./auth.js";
-import { databaseFile, databaseProvider, initDb } from "./db.js";
+import { databaseFile, databaseProvider, initDb, keepDbAlive } from "./db.js";
 import { createSocialRouter } from "./friends.js";
 import { getLeaderboard } from "./leaderboard.js";
 import {
@@ -158,6 +158,13 @@ export function createApp() {
       realtime: "websocket",
       dictionary: getWordBankStats(),
     });
+  });
+
+  // Hit by Vercel Cron (see vercel.json) to keep the free-tier Supabase project
+  // from auto-pausing after 7 days of inactivity. Runs a trivial SELECT 1.
+  app.get("/api/keepalive", async (_req, res) => {
+    await keepDbAlive();
+    res.json({ ok: true });
   });
 
   app.get("/api/auth/me", async (req, res) => {
