@@ -13,14 +13,17 @@ import {
   signIn,
   signInAnonymously,
   signUp,
+  upgradeAnonymousAccount,
 } from "./auth.js";
 import { databaseFile, databaseProvider, initDb, keepDbAlive } from "./db.js";
+import { enforceRateLimit, RateLimitError } from "./rateLimit.js";
 import { createSocialRouter } from "./friends.js";
 import { getLeaderboard } from "./leaderboard.js";
 import {
   cancelWaitingLobby,
   cleanupExpiredWaitingGames,
   createGame,
+  forfeitGame,
   getGameState,
   getPlayerGames,
   joinGame,
@@ -77,7 +80,7 @@ function parseExpectedLength(value: unknown): 4 | 5 | undefined {
 
 function respondWithRouteError(res: express.Response, error: unknown, fallbackMessage: string) {
   const message = error instanceof Error ? error.message : fallbackMessage;
-  const status = message === "You must be signed in." ? 401 : 400;
+  const status = error instanceof RateLimitError ? 429 : message === "You must be signed in." ? 401 : 400;
   res.status(status).json({ error: message });
 }
 
@@ -95,6 +98,28 @@ function isOriginAllowed(origin: string) {
   return DEV_ORIGIN_PATTERN.test(origin);
 }
 
+function isBearerAuthenticated(req: express.Request) {
+  const authHeader = req.headers.authorization;
+  return typeof authHeader === "string" && authHeader.startsWith("Bearer ") && authHeader.slice(7).trim().length > 0;
+}
+
+// A cookie-authenticated, cross-origin state-changing request is CSRF-eligible:
+// the session cookie is SameSite=None there, so a third-party page can trigger it
+// with the browser attaching the cookie automatically. We defend such requests by
+// requiring a custom header (X-Requested-With: fetch) that a cross-site form or
+// <img>/<script> navigation cannot set, and that browsers gate behind a CORS
+// preflight. Bearer-token requests (attacker can't read the token) and same-origin
+// deployments (SameSite=strict cookie) are not CSRF-eligible and are exempt.
+function requiresCsrfHeader(req: express.Request) {
+  if (ALLOWED_ORIGINS.length === 0) return false;
+  if (isBearerAuthenticated(req)) return false;
+  return true;
+}
+
+function passesCsrfCheck(req: express.Request) {
+  return !requiresCsrfHeader(req) || req.headers["x-requested-with"] === "fetch";
+}
+
 export function createApp() {
   const app = express();
   app.disable("x-powered-by");
@@ -110,7 +135,7 @@ export function createApp() {
       res.setHeader("Vary", "Origin");
       res.setHeader("Access-Control-Allow-Credentials", "true");
       res.setHeader("Access-Control-Allow-Methods", "GET,POST,PATCH,DELETE,OPTIONS");
-      res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization");
+      res.setHeader("Access-Control-Allow-Headers", "Content-Type,Authorization,X-Requested-With");
     }
     if (req.method === "OPTIONS") {
       res.sendStatus(204);
@@ -184,37 +209,60 @@ export function createApp() {
         return;
       }
 
+      await enforceRateLimit("signup-ip", req.ip || "unknown", 5, 3600000);
+
       const userId = await signUp(req.body.username ?? req.body.identifier ?? req.body.email ?? "", req.body.password ?? "");
       const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
       res.json({ ok: true, user: await getUserById(userId), token });
       return;
     } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : "Could not sign up." });
+      respondWithRouteError(res, error, "Could not sign up.");
     }
   });
 
   app.post("/api/auth/signin", async (req, res) => {
     try {
       const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
-      const userId = await signIn(
-        req.body.identifier ?? req.body.email ?? req.body.username ?? "",
-        req.body.password ?? ""
-      );
+      const identifier = req.body.identifier ?? req.body.email ?? req.body.username ?? "";
+
+      await enforceRateLimit("signin-ip", req.ip || "unknown", 10, 60000);
+      await enforceRateLimit("signin-id", String(identifier || "").toLowerCase(), 5, 300000);
+
+      const userId = await signIn(identifier, req.body.password ?? "");
       const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
       res.json({ ok: true, user: await getUserById(userId), token });
     } catch (error) {
-      res.status(400).json({ error: error instanceof Error ? error.message : "Could not sign in." });
+      respondWithRouteError(res, error, "Could not sign in.");
     }
   });
 
   app.post("/api/auth/anonymous", async (req, res) => {
-    const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
-    const userId = await signInAnonymously();
-    const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
-    res.json({ ok: true, user: await getUserById(userId), token });
+    try {
+      const currentSessionId = req.cookies?.[getSessionCookieName()] ?? null;
+      await enforceRateLimit("anon-ip", req.ip || "unknown", 30, 3600000);
+      const userId = await signInAnonymously();
+      const token = await createSession(res, userId, { replaceExistingSessionId: currentSessionId });
+      res.json({ ok: true, user: await getUserById(userId), token });
+    } catch (error) {
+      respondWithRouteError(res, error, "Could not continue as guest.");
+    }
+  });
+
+  app.post("/api/auth/upgrade", async (req, res) => {
+    try {
+      const user = await requireUser(req);
+      const upgraded = await upgradeAnonymousAccount(user.id, req.body.username ?? "", req.body.password ?? "");
+      res.json({ ok: true, user: upgraded });
+    } catch (error) {
+      respondWithRouteError(res, error, "Could not upgrade account.");
+    }
   });
 
   app.post("/api/auth/signout", async (req, res) => {
+    if (!passesCsrfCheck(req)) {
+      res.status(403).json({ error: "Missing required X-Requested-With header." });
+      return;
+    }
     await clearSession(req, res);
     res.json({ ok: true });
   });
@@ -290,6 +338,15 @@ export function createApp() {
       res.json(await submitGuess(user, req.params.gameId, req.body.type, req.body.text ?? ""));
     } catch (error) {
       respondWithRouteError(res, error, "Could not submit guess.");
+    }
+  });
+
+  app.post("/api/games/:gameId/forfeit", async (req, res) => {
+    try {
+      const user = await requireUser(req);
+      res.json(await forfeitGame(user, req.params.gameId));
+    } catch (error) {
+      respondWithRouteError(res, error, "Could not forfeit game.");
     }
   });
 

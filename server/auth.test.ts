@@ -11,6 +11,7 @@ import {
   signIn,
   signInAnonymously,
   signUp,
+  upgradeAnonymousAccount,
 } from "./auth.js";
 
 function createMockRequest(sessionId?: string) {
@@ -169,6 +170,32 @@ describe("auth", () => {
       is_anonymous: 1,
     });
     expect(activeSession?.id).toBe(sessionId);
+  });
+
+  it("upgrades an anonymous account in place, preserving its id", async () => {
+    const guestId = await signInAnonymously();
+
+    const upgraded = await upgradeAnonymousAccount(guestId, "upgraded-player", "supersecret");
+
+    expect(upgraded.id).toBe(guestId);
+    expect(upgraded.username).toBe("upgraded-player");
+    expect(upgraded.isAnonymous).toBe(false);
+
+    const row = db.prepare(`SELECT is_anonymous, password_hash FROM users WHERE id = ?`).get(guestId) as
+      | { is_anonymous: number; password_hash: string | null }
+      | undefined;
+    expect(row?.is_anonymous).toBe(0);
+    expect(row?.password_hash).toBeTruthy();
+
+    expect(await signIn("upgraded-player", "supersecret")).toBe(guestId);
+  });
+
+  it("rejects upgrading an already-registered account", async () => {
+    const userId = await signUp("registered-player", "supersecret");
+
+    await expect(
+      Promise.resolve().then(() => upgradeAnonymousAccount(userId, "new-name", "supersecret"))
+    ).rejects.toThrow(/already registered/i);
   });
 
   it("accepts a username on the signin route and creates a live session", async () => {

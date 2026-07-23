@@ -1,16 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { db, initDb } from "./db.js";
 import {
+  cleanupExpiredWaitingGames,
   createGame,
   cancelWaitingLobby,
+  forfeitGame,
   getGameState,
-  getLeaderboard,
   joinGame,
   listPublicLobbies,
   markGamePresenceOffline,
   submitGuess,
   updateAlphabet,
 } from "./gameService.js";
+// getLeaderboard now lives in leaderboard.ts (the served source of truth,
+// recomputed from games/players/guesses). gameService no longer owns a copy.
+import { getLeaderboard } from "./leaderboard.js";
 import type { AuthUser } from "./types.js";
 import { GUESS_BURST_LIMIT, GUESS_COOLDOWN_MS } from "../shared/gameLogic.js";
 import { PLAYER_PRESENCE_OFFLINE_TTL_MS } from "./presence.js";
@@ -241,6 +245,56 @@ describe("game service", () => {
 
     expect(first.gameId).not.toBe(second.gameId);
     expect(first.code).not.toBe(second.code);
+  });
+
+  it("forfeits an active game to the opponent and records the loss/win", () => {
+    const alpha = makeUser("user-alpha", "alpha@example.com");
+    const bravo = makeUser("user-bravo", "bravo@example.com");
+    seedUser(alpha);
+    seedUser(bravo);
+
+    const created = createGame(alpha, "Alpha", "CRANE", true);
+    joinGame(bravo, created.code, "Bravo", "LIGHT");
+
+    const bravoState = getGameState(bravo, created.gameId);
+    const bravoPlayerId = bravoState?.me.id;
+
+    const result = forfeitGame(alpha, created.gameId);
+
+    expect(result.status).toBe("completed");
+    expect(result.winnerPlayerId).toBe(bravoPlayerId);
+
+    const completed = getGameState(alpha, created.gameId);
+    expect(completed?.game.status).toBe("completed");
+    expect(completed?.game.winnerId).toBe(bravoPlayerId);
+
+    const leaderboard = getLeaderboard();
+    const bravoEntry = leaderboard.find((entry) => entry.username === "Bravo");
+    const alphaEntry = leaderboard.find((entry) => entry.username === "Alpha");
+    expect(bravoEntry?.wins).toBe(1);
+    expect(alphaEntry?.wins).toBe(0);
+    expect(alphaEntry?.gamesPlayed).toBe(1);
+
+    expect(() => forfeitGame(alpha, created.gameId)).toThrow(/game is not active/i);
+  });
+
+  it("reaps abandoned active games after six hours of inactivity", () => {
+    const alpha = makeUser("user-alpha", "alpha@example.com");
+    const bravo = makeUser("user-bravo", "bravo@example.com");
+    seedUser(alpha);
+    seedUser(bravo);
+
+    const created = createGame(alpha, "Alpha", "CRANE", true);
+    joinGame(bravo, created.code, "Bravo", "LIGHT");
+
+    advanceTime(6 * 60 * 60 * 1000 + 1);
+    cleanupExpiredWaitingGames();
+
+    const row = db
+      .prepare(`SELECT status, winner_player_id FROM games WHERE id = ?`)
+      .get(created.gameId) as { status: string; winner_player_id: string | null } | undefined;
+    expect(row?.status).toBe("completed");
+    expect(row?.winner_player_id).toBeNull();
   });
 
   it("tracks average guesses per win using wins only", () => {

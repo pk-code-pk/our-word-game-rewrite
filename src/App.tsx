@@ -4,10 +4,12 @@ import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { GameLobby } from "./components/GameLobby";
 import { GameBoard } from "./components/GameBoard";
+import { Leaderboard } from "./components/Leaderboard";
 import { RecentGamesPanel } from "./components/RecentGamesPanel";
 import { ScreenErrorBoundary } from "./components/ScreenErrorBoundary";
 import { FriendsPanel } from "./components/social/FriendsPanel";
 import { GuestInvitesPanel } from "./components/social/GuestInvitesPanel";
+import { SocialDataProvider } from "./components/social/SocialDataProvider";
 import { SocialInbox } from "./components/social/SocialInbox";
 import { SignInForm } from "./SignInForm";
 import { SignOutButton } from "./SignOutButton";
@@ -53,14 +55,9 @@ function Content() {
   const [playState, setPlayState] = useState<PlayState>(() =>
     user?.id ? readStoredPlayState(user.id, user) : createDefaultPlayState(user)
   );
-  const [socialRefreshKey, setSocialRefreshKey] = useState(0);
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
   const [openInbox, setOpenInbox] = useState(false);
   const [openGuestInvites, setOpenGuestInvites] = useState(false);
-
-  function refreshSocialData() {
-    setSocialRefreshKey((tick) => tick + 1);
-  }
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
@@ -246,7 +243,7 @@ function Content() {
   }
 
   return (
-    <>
+    <SocialDataProvider>
       <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
           <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
@@ -255,8 +252,6 @@ function Content() {
             {canUseSocial && (
               <FriendsPanel
                 onQuickInvite={handleQuickInvite}
-                refreshKey={socialRefreshKey}
-                onSocialMutated={refreshSocialData}
                 forceOpen={openFriendsPanel}
                 onForceOpenConsumed={() => setOpenFriendsPanel(false)}
               />
@@ -265,8 +260,6 @@ function Content() {
               <SocialInbox
                 secretWord={secretWord}
                 displayName={username}
-                refreshKey={socialRefreshKey}
-                onSocialMutated={refreshSocialData}
                 onOpenGame={(gameId) => {
                   setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                 }}
@@ -279,8 +272,6 @@ function Content() {
                 onSendInvite={handleGuestUsernameInvite}
                 secretWord={secretWord}
                 displayName={username}
-                refreshKey={socialRefreshKey}
-                onSocialMutated={refreshSocialData}
                 onOpenGame={(gameId) => {
                   setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                 }}
@@ -288,6 +279,7 @@ function Content() {
                 onForceOpenConsumed={() => setOpenGuestInvites(false)}
               />
             )}
+            {isAuthenticated && <Leaderboard />}
             <SignOutButton />
           </div>
         </div>
@@ -350,6 +342,6 @@ function Content() {
           </ScreenErrorBoundary>
         </div>
       </main>
-    </>
+    </SocialDataProvider>
   );
 }

@@ -2,6 +2,7 @@ import type {
   AlphabetState,
   AuthUser,
   GameStateView,
+  LeaderboardEntry,
   PresenceState,
   RecentGameSummary,
   SocialOverview,
@@ -218,7 +219,13 @@ export const api = {
     authRequest("/api/auth/signin", { identifier, username: identifier, password }),
   signInAnonymous: () => authRequest("/api/auth/anonymous"),
   signOut: async () => {
-    const result = await request<{ ok: true }>("/api/auth/signout", { method: "POST" });
+    // X-Requested-With marks this as a same-app fetch. In cross-origin deploys the
+    // server requires it on cookie-authenticated signout as CSRF protection, since
+    // the session cookie is SameSite=None and would otherwise ride a forged request.
+    const result = await request<{ ok: true }>("/api/auth/signout", {
+      method: "POST",
+      headers: { "X-Requested-With": "fetch" },
+    });
     clearStoredToken();
     return result;
   },
@@ -239,6 +246,7 @@ export const api = {
       waitingPublicCount: number;
     }>("/api/games/public-lobbies"),
   getPlayerGames: () => request<{ games: RecentGameSummary[] }>("/api/games"),
+  getLeaderboard: () => request<{ leaderboard: LeaderboardEntry[] }>("/api/leaderboard"),
   createGame: (payload: { username: string; secretWord: string; public: boolean }) =>
     request<{ gameId: string; code: string }>("/api/games", {
       method: "POST",

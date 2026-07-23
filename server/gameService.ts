@@ -24,12 +24,11 @@ import type {
   ChatMessageView,
   GameStateView,
   GuessType,
-  LeaderboardEntry,
   PublicLobby,
   RecentGameSummary,
 } from "./types.js";
 import { getGamePresence, markPlayerOffline, touchPlayerPresence, upsertPlayerPresence } from "./presence.js";
-import { emitGameEvent } from "./gameEvents.js";
+import { broadcastGameSignal } from "./realtime.js";
 
 const WAITING_GAME_LIMIT = 100;
 
@@ -194,6 +193,17 @@ function getGameStatus(gameId: string) {
   >;
 }
 
+// Reads the game row inside a transaction, taking a row lock on Postgres
+// (SELECT ... FOR UPDATE) so concurrent guesses on the same game serialize.
+// FOR UPDATE is Postgres-only, so it is omitted for SQLite (where BEGIN
+// IMMEDIATE already serializes writers).
+function lockGameForGuess(runner: DbRunner, gameId: string) {
+  const forUpdate = databaseProvider === "postgres" ? " FOR UPDATE" : "";
+  return runner.prepare(`SELECT id, status FROM games WHERE id = ?${forUpdate}`).get(gameId) as MaybePromise<
+    { id: string; status: "waiting" | "active" | "completed" } | undefined
+  >;
+}
+
 export type JoinWaitingGameParams = {
   game: WaitingGameRow;
   user: AuthUser;
@@ -315,6 +325,9 @@ export function performJoinWaitingGameWithRunner(runner: DbRunner, params: JoinW
 export function cleanupExpiredWaitingGames(): number;
 export function cleanupExpiredWaitingGames(): any {
   const threshold = now() - 12 * 60 * 60 * 1000;
+  // Abandoned ACTIVE games (no guess/chat/presence touch in 6h) are reaped too,
+  // so they stop showing as live and their players stop waiting on them.
+  const activeThreshold = now() - 6 * 60 * 60 * 1000;
 
   if (databaseProvider === "sqlite") {
     const expiredGames = db
@@ -325,6 +338,11 @@ export function cleanupExpiredWaitingGames(): any {
       db.prepare(`DELETE FROM games WHERE id = ?`).run(game.id);
     }
 
+    db.prepare(
+      `UPDATE games SET status = 'completed', winner_player_id = NULL, completed_at = ?
+       WHERE status = 'active' AND last_activity_at < ?`
+    ).run(now(), activeThreshold);
+
     return expiredGames.length;
   }
 
@@ -332,6 +350,13 @@ export function cleanupExpiredWaitingGames(): any {
     const result = (await db
       .prepare(`DELETE FROM games WHERE status = 'waiting' AND created_at < ?`)
       .run(threshold)) as { changes: number };
+
+    await db
+      .prepare(
+        `UPDATE games SET status = 'completed', winner_player_id = NULL, completed_at = ?
+         WHERE status = 'active' AND last_activity_at < ?`
+      )
+      .run(now(), activeThreshold);
 
     return result.changes ?? 0;
   })();
@@ -499,7 +524,7 @@ export function joinGame(
       playerId,
     });
 
-    emitGameEvent({ type: "updated", gameId: game.id });
+    void broadcastGameSignal(game.id, "updated");
 
     return { gameId: game.id };
   }
@@ -534,7 +559,7 @@ export function joinGame(
       });
     })();
 
-    emitGameEvent({ type: "updated", gameId: result.gameId });
+    void broadcastGameSignal(result.gameId, "updated");
 
     return result;
   })();
@@ -632,6 +657,29 @@ export function listPublicLobbies(): any {
   })();
 }
 
+// A concurrent player may have filled or started the lobby we picked between our
+// SELECT and our join. Those are transient contention errors: matchmaking should
+// pick another lobby (or create one), not surface the failure to the caller.
+function isMatchmakeContentionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  return /already started|already completed|game is full|game not found/i.test(error.message);
+}
+
+function selectWaitingLobbyForMatchmake(userId: string, excludedGameIds: string[]) {
+  const exclusionPlaceholders = excludedGameIds.map(() => "?").join(", ");
+  const exclusionClause = excludedGameIds.length ? ` AND games.id NOT IN (${exclusionPlaceholders})` : "";
+  return db
+    .prepare(
+      `SELECT games.id, games.code FROM games
+       WHERE games.public = 1 AND games.status = 'waiting'
+       AND games.id NOT IN (SELECT game_id FROM players WHERE user_id = ?)${exclusionClause}
+       ORDER BY games.created_at ASC LIMIT 1`
+    )
+    .get(userId, ...excludedGameIds) as MaybePromise<{ id: string; code: string } | undefined>;
+}
+
 export function matchmake(
   user: AuthUser,
   usernameInput: string,
@@ -645,41 +693,53 @@ export function matchmake(
   if (databaseProvider === "sqlite") {
     cleanupExpiredWaitingGames();
 
-    const row = db
-      .prepare(
-        `SELECT games.id, games.code FROM games
-         WHERE games.public = 1 AND games.status = 'waiting'
-         AND games.id NOT IN (SELECT game_id FROM players WHERE user_id = ?)
-         ORDER BY games.created_at ASC LIMIT 1`
-      )
-      .get(user.id) as { id: string; code: string } | undefined;
+    const excludedGameIds: string[] = [];
+    for (;;) {
+      const row = selectWaitingLobbyForMatchmake(user.id, excludedGameIds) as
+        | { id: string; code: string }
+        | undefined;
 
-    if (row) {
-      joinGame(user, row.code, usernameInput, secretWordInput);
-      return { gameId: row.id, code: row.code };
+      if (!row) {
+        return createGame(user, usernameInput, secretWordInput, true);
+      }
+
+      try {
+        joinGame(user, row.code, usernameInput, secretWordInput);
+        return { gameId: row.id, code: row.code };
+      } catch (error) {
+        if (isMatchmakeContentionError(error)) {
+          excludedGameIds.push(row.id);
+          continue;
+        }
+        throw error;
+      }
     }
-
-    return createGame(user, usernameInput, secretWordInput, true);
   }
 
   return (async () => {
     await cleanupExpiredWaitingGames();
 
-    const row = (await db
-      .prepare(
-        `SELECT games.id, games.code FROM games
-         WHERE games.public = 1 AND games.status = 'waiting'
-         AND games.id NOT IN (SELECT game_id FROM players WHERE user_id = ?)
-         ORDER BY games.created_at ASC LIMIT 1`
-      )
-      .get(user.id)) as { id: string; code: string } | undefined;
+    const excludedGameIds: string[] = [];
+    for (;;) {
+      const row = (await selectWaitingLobbyForMatchmake(user.id, excludedGameIds)) as
+        | { id: string; code: string }
+        | undefined;
 
-    if (row) {
-      await joinGame(user, row.code, usernameInput, secretWordInput);
-      return { gameId: row.id, code: row.code };
+      if (!row) {
+        return createGame(user, usernameInput, secretWordInput, true);
+      }
+
+      try {
+        await joinGame(user, row.code, usernameInput, secretWordInput);
+        return { gameId: row.id, code: row.code };
+      } catch (error) {
+        if (isMatchmakeContentionError(error)) {
+          excludedGameIds.push(row.id);
+          continue;
+        }
+        throw error;
+      }
     }
-
-    return createGame(user, usernameInput, secretWordInput, true);
   })();
 }
 
@@ -1276,33 +1336,45 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
     const text = normalizeWord(textInput);
     assertValidDictionaryWord(text, normalizedType === "fourLetter" ? 4 : 5);
 
-    const guessNumber =
-      ((db.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id) as { count: number }).count ?? 0) + 1;
-
     const isCorrect = normalizedType === "fullWord" && text === opponent.secret_word;
     const matchCount = normalizedType === "fullWord" ? (isCorrect ? 5 : 0) : calculateMatchCount(text, opponent.secret_word);
 
     const guessId = uuid();
     const submittedAt = now();
 
-    db.prepare(
-      `INSERT INTO guesses (id, game_id, player_id, type, text, match_count, is_correct, guess_number, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(guessId, gameId, player.id, normalizedType, text, matchCount, isCorrect ? 1 : 0, guessNumber, submittedAt);
+    // BEGIN IMMEDIATE (see db.transaction) serializes writers so concurrent
+    // guesses on the same game can't both pass the active check and both write
+    // a winner. Re-assert status and compute guessNumber inside the txn.
+    const guessNumber = db.transaction((tx) => {
+      const lockedGame = lockGameForGuess(tx, gameId) as { id: string; status: "waiting" | "active" | "completed" } | undefined;
+      if (!lockedGame || lockedGame.status !== "active") {
+        throw new Error("Game is not active.");
+      }
 
-    db.prepare(`UPDATE players SET total_guesses = ? WHERE id = ?`).run(guessNumber, player.id);
+      const nextGuessNumber =
+        ((tx.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id) as { count: number }).count ?? 0) + 1;
 
-    if (isCorrect) {
-      db.prepare(
-        `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
-      ).run(player.id, submittedAt, submittedAt, gameId);
-      updateUserStatsWithRunner(db, user.id, true, guessNumber, player.username);
-      updateUserStatsWithRunner(db, opponent.user_id, false, opponent.total_guesses, opponent.username);
-    } else {
-      db.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
-    }
+      tx.prepare(
+        `INSERT INTO guesses (id, game_id, player_id, type, text, match_count, is_correct, guess_number, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(guessId, gameId, player.id, normalizedType, text, matchCount, isCorrect ? 1 : 0, nextGuessNumber, submittedAt);
 
-    emitGameEvent({ type: "updated", gameId });
+      tx.prepare(`UPDATE players SET total_guesses = ? WHERE id = ?`).run(nextGuessNumber, player.id);
+
+      if (isCorrect) {
+        tx.prepare(
+          `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
+        ).run(player.id, submittedAt, submittedAt, gameId);
+        updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
+        updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
+      } else {
+        tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
+      }
+
+      return nextGuessNumber;
+    })() as number;
+
+    void broadcastGameSignal(gameId, "updated");
 
     return {
       matchCount,
@@ -1351,24 +1423,35 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
     const text = normalizeWord(textInput);
     assertValidDictionaryWord(text, normalizedType === "fourLetter" ? 4 : 5);
 
-    const guessNumber =
-      ((((await db.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id)) as { count: number }).count ?? 0) + 1);
-
     const isCorrect = normalizedType === "fullWord" && text === opponent.secret_word;
     const matchCount = normalizedType === "fullWord" ? (isCorrect ? 5 : 0) : calculateMatchCount(text, opponent.secret_word);
 
     const guessId = uuid();
     const submittedAt = now();
 
-    await db.transaction(async (tx) => {
+    // Take a row lock on the games row and re-read status INSIDE the txn so two
+    // simultaneous correct guesses (or a double-click) can't both pass the
+    // active check and both write status=completed/winner. guessNumber is also
+    // computed under the lock so it can't collide.
+    const guessNumber = (await db.transaction(async (tx) => {
+      const lockedGame = (await lockGameForGuess(tx, gameId)) as
+        | { id: string; status: "waiting" | "active" | "completed" }
+        | undefined;
+      if (!lockedGame || lockedGame.status !== "active") {
+        throw new Error("Game is not active.");
+      }
+
+      const nextGuessNumber =
+        ((((await tx.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id)) as { count: number }).count ?? 0) + 1);
+
       await tx
         .prepare(
           `INSERT INTO guesses (id, game_id, player_id, type, text, match_count, is_correct, guess_number, created_at)
            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(guessId, gameId, player.id, normalizedType, text, matchCount, isCorrect ? 1 : 0, guessNumber, submittedAt);
+        .run(guessId, gameId, player.id, normalizedType, text, matchCount, isCorrect ? 1 : 0, nextGuessNumber, submittedAt);
 
-      await tx.prepare(`UPDATE players SET total_guesses = ? WHERE id = ?`).run(guessNumber, player.id);
+      await tx.prepare(`UPDATE players SET total_guesses = ? WHERE id = ?`).run(nextGuessNumber, player.id);
 
       if (isCorrect) {
         await tx
@@ -1376,14 +1459,16 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
             `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
           )
           .run(player.id, submittedAt, submittedAt, gameId);
-        await updateUserStatsWithRunner(tx, user.id, true, guessNumber, player.username);
+        await updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
         await updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
       } else {
         await tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
       }
-    })();
 
-    emitGameEvent({ type: "updated", gameId });
+      return nextGuessNumber;
+    })()) as number;
+
+    void broadcastGameSignal(gameId, "updated");
 
     return {
       matchCount,
@@ -1391,6 +1476,92 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       guessNumber,
       gameStatus: (isCorrect ? "completed" : "active") as "active" | "completed",
     };
+  })();
+}
+
+export function forfeitGame(user: AuthUser, gameId: string): { status: "completed"; winnerPlayerId: string };
+export function forfeitGame(user: AuthUser, gameId: string): any {
+  if (databaseProvider === "sqlite") {
+    const game = db
+      .prepare(`SELECT id, status FROM games WHERE id = ?`)
+      .get(gameId) as { id: string; status: "waiting" | "active" | "completed" } | undefined;
+    if (!game || game.status !== "active") {
+      throw new Error("Game is not active.");
+    }
+
+    const { player, players } = getPlayerInGameFrom(db, gameId, user.id) as {
+      player: GameStatePlayerRow & { user_id: string };
+      players: Array<GameStatePlayerRow & { user_id: string }>;
+    };
+    const opponent = players.find((entry) => entry.id !== player.id);
+    if (!opponent) {
+      throw new Error("Opponent not found.");
+    }
+
+    const completedAt = now();
+
+    // BEGIN IMMEDIATE serializes writers; re-assert status under the lock so a
+    // forfeit can't race a final guess (or a concurrent forfeit) into a double
+    // completion / conflicting winner.
+    db.transaction((tx) => {
+      const lockedGame = lockGameForGuess(tx, gameId) as
+        | { id: string; status: "waiting" | "active" | "completed" }
+        | undefined;
+      if (!lockedGame || lockedGame.status !== "active") {
+        throw new Error("Game is not active.");
+      }
+
+      tx.prepare(
+        `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
+      ).run(opponent.id, completedAt, completedAt, gameId);
+      updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
+      updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+    })();
+
+    void broadcastGameSignal(gameId, "updated");
+
+    return { status: "completed" as const, winnerPlayerId: opponent.id };
+  }
+
+  return (async () => {
+    const game = (await db
+      .prepare(`SELECT id, status FROM games WHERE id = ?`)
+      .get(gameId)) as { id: string; status: "waiting" | "active" | "completed" } | undefined;
+    if (!game || game.status !== "active") {
+      throw new Error("Game is not active.");
+    }
+
+    const { player, players } = (await getPlayerInGameFrom(db, gameId, user.id)) as {
+      player: GameStatePlayerRow & { user_id: string };
+      players: Array<GameStatePlayerRow & { user_id: string }>;
+    };
+    const opponent = players.find((entry) => entry.id !== player.id);
+    if (!opponent) {
+      throw new Error("Opponent not found.");
+    }
+
+    const completedAt = now();
+
+    await db.transaction(async (tx) => {
+      const lockedGame = (await lockGameForGuess(tx, gameId)) as
+        | { id: string; status: "waiting" | "active" | "completed" }
+        | undefined;
+      if (!lockedGame || lockedGame.status !== "active") {
+        throw new Error("Game is not active.");
+      }
+
+      await tx
+        .prepare(
+          `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
+        )
+        .run(opponent.id, completedAt, completedAt, gameId);
+      await updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
+      await updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+    })();
+
+    void broadcastGameSignal(gameId, "updated");
+
+    return { status: "completed" as const, winnerPlayerId: opponent.id };
   })();
 }
 
@@ -1416,7 +1587,7 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
     const alphabet = parseAlphabet(player.alphabet_json);
     alphabet[letter] = assertValidAlphabetState(state);
     db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
-    emitGameEvent({ type: "updated", gameId });
+    void broadcastGameSignal(gameId, "updated");
     return alphabet;
   }
 
@@ -1435,7 +1606,7 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
     const alphabet = parseAlphabet(player.alphabet_json);
     alphabet[letter] = assertValidAlphabetState(state);
     await db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
-    emitGameEvent({ type: "updated", gameId });
+    void broadcastGameSignal(gameId, "updated");
     return alphabet;
   })();
 }
@@ -1590,7 +1761,7 @@ export function cancelWaitingLobby(user: AuthUser, gameId: string): any {
     getPlayerInGameFrom(db, gameId, user.id);
     db.prepare(`DELETE FROM games WHERE id = ?`).run(gameId);
 
-    emitGameEvent({ type: "ended", gameId });
+    void broadcastGameSignal(gameId, "ended");
 
     return { cancelled: true as const };
   }
@@ -1611,7 +1782,7 @@ export function cancelWaitingLobby(user: AuthUser, gameId: string): any {
     await getPlayerInGameFrom(db, gameId, user.id);
     await db.prepare(`DELETE FROM games WHERE id = ?`).run(gameId);
 
-    emitGameEvent({ type: "ended", gameId });
+    void broadcastGameSignal(gameId, "ended");
 
     return { cancelled: true as const };
   })();
@@ -1627,7 +1798,7 @@ export function markGamePresenceOffline(user: AuthUser, gameId: string): any {
       userId: user.id,
     });
 
-    emitGameEvent({ type: "updated", gameId });
+    void broadcastGameSignal(gameId, "updated");
 
     return { presence: "offline" as const };
   }
@@ -1640,79 +1811,8 @@ export function markGamePresenceOffline(user: AuthUser, gameId: string): any {
       userId: user.id,
     });
 
-    emitGameEvent({ type: "updated", gameId });
+    void broadcastGameSignal(gameId, "updated");
 
     return { presence: "offline" as const };
-  })();
-}
-
-export function getLeaderboard(): LeaderboardEntry[];
-export function getLeaderboard(): any {
-  const mapRows = (
-    rows: Array<{
-      most_recent_username: string;
-      wins: number;
-      losses: number;
-      total_guesses: number;
-      total_win_guesses: number;
-      games_played: number;
-      current_win_streak: number;
-      recent_results_json: string;
-      best_win_guesses: number | null;
-    }>
-  ) =>
-    rows.map((stat) => ({
-      username: stat.most_recent_username,
-      wins: stat.wins,
-      averageGuessesPerWin: stat.wins > 0 ? Math.round((stat.total_win_guesses / stat.wins) * 10) / 10 : 0,
-      gamesPlayed: stat.games_played,
-      currentWinStreak: stat.current_win_streak,
-      winRate: stat.games_played > 0 ? Math.round((stat.wins / stat.games_played) * 100) : 0,
-      bestWinGuesses: stat.best_win_guesses ?? undefined,
-      recentResults: parseRecentResults(stat.recent_results_json ?? "[]"),
-    }));
-
-  if (databaseProvider === "sqlite") {
-    const rows = db
-      .prepare(
-        `SELECT most_recent_username, wins, losses, total_guesses, total_win_guesses, games_played, current_win_streak, recent_results_json, best_win_guesses
-         FROM user_stats
-         ORDER BY wins DESC, current_win_streak DESC, updated_at DESC
-         LIMIT 10`
-      )
-      .all() as Array<{
-      most_recent_username: string;
-      wins: number;
-      losses: number;
-      total_guesses: number;
-      total_win_guesses: number;
-      games_played: number;
-      current_win_streak: number;
-      recent_results_json: string;
-      best_win_guesses: number | null;
-    }>;
-    return mapRows(rows);
-  }
-
-  return (async () => {
-    const rows = (await db
-      .prepare(
-        `SELECT most_recent_username, wins, losses, total_guesses, total_win_guesses, games_played, current_win_streak, recent_results_json, best_win_guesses
-         FROM user_stats
-         ORDER BY wins DESC, current_win_streak DESC, updated_at DESC
-         LIMIT 10`
-      )
-      .all()) as Array<{
-      most_recent_username: string;
-      wins: number;
-      losses: number;
-      total_guesses: number;
-      total_win_guesses: number;
-      games_played: number;
-      current_win_streak: number;
-      recent_results_json: string;
-      best_win_guesses: number | null;
-    }>;
-    return mapRows(rows);
   })();
 }

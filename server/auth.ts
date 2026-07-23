@@ -12,6 +12,12 @@ const MIN_PASSWORD_LENGTH = 8;
 const MAX_PASSWORD_LENGTH = 72;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+// Precomputed once at module load. When a sign-in targets a missing user (or one
+// with no password_hash) we still run a bcrypt comparison against this constant so
+// the response time is indistinguishable from a real user with a wrong password,
+// closing the username-enumeration timing side channel.
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync("timing-safe-dummy-password", 10);
+
 type CreateSessionOptions = {
   replaceExistingSessionId?: string | null;
 };
@@ -181,7 +187,9 @@ export function createSession(res: Response, userId: string, options?: CreateSes
           res.cookie(SESSION_COOKIE, sessionId, {
             httpOnly: true,
             sameSite: isCrossOrigin() ? "none" : "strict",
-            secure: isProduction(),
+            // SameSite=None legally requires Secure, so cross-origin deployments must
+            // set it even outside production (e.g. a non-prod NODE_ENV behind HTTPS).
+            secure: isProduction() || isCrossOrigin(),
             maxAge: SESSION_TTL_MS,
           });
           return sessionId;
@@ -198,7 +206,9 @@ export function clearSession(req: Request, res: Response): MaybePromise<void> {
     res.clearCookie(SESSION_COOKIE, {
       httpOnly: true,
       sameSite: isCrossOrigin() ? "none" : "strict",
-      secure: isProduction(),
+      // Mirror the attributes used when the cookie was set so the browser matches
+      // and actually clears it (SameSite=None requires Secure).
+      secure: isProduction() || isCrossOrigin(),
     });
   });
 }
@@ -308,6 +318,9 @@ export function signIn(identifier: string, password: string): MaybePromise<strin
   assertValidPassword(password);
   return flatMapMaybePromise(findUserForSignIn(identifier), (user) => {
     if (!user?.password_hash) {
+      // Burn an equivalent bcrypt comparison so a missing user (or one without a
+      // password) takes the same time as a real user with a wrong password.
+      bcrypt.compareSync(password, DUMMY_PASSWORD_HASH);
       throw new Error("Invalid username or password.");
     }
 
@@ -320,22 +333,99 @@ export function signIn(identifier: string, password: string): MaybePromise<strin
   });
 }
 
-export function changePassword(userId: string, currentPassword: string, newPassword: string): void {
+export function changePassword(userId: string, currentPassword: string, newPassword: string): MaybePromise<void> {
   assertValidPassword(newPassword);
 
-  const row = db
-    .prepare(`SELECT password_hash FROM users WHERE id = ?`)
-    .get(userId) as { password_hash: string | null } | undefined;
+  // In Postgres mode every db call returns a Promise; flatMapMaybePromise keeps
+  // the same code path working synchronously under SQLite. The previous version
+  // was a plain sync function, so in production `row` was a Promise and this
+  // always threw "not supported for this account type".
+  return flatMapMaybePromise(
+    db.prepare(`SELECT password_hash FROM users WHERE id = ?`).get(userId) as MaybePromise<
+      { password_hash: string | null } | undefined
+    >,
+    (row) => {
+      if (!row?.password_hash) {
+        throw new Error("Password changes are not supported for this account type.");
+      }
 
-  if (!row?.password_hash) {
-    throw new Error("Password changes are not supported for this account type.");
-  }
+      if (!bcrypt.compareSync(currentPassword, row.password_hash)) {
+        throw new Error("Current password is incorrect.");
+      }
 
-  if (!bcrypt.compareSync(currentPassword, row.password_hash)) {
-    throw new Error("Current password is incorrect.");
-  }
+      return flatMapMaybePromise(
+        db
+          .prepare(`UPDATE users SET password_hash = ? WHERE id = ?`)
+          .run(bcrypt.hashSync(newPassword, 10), userId),
+        () =>
+          // Force a fresh sign-in everywhere: a password change should revoke every
+          // existing session (including any an attacker may hold), not just the caller's.
+          flatMapMaybePromise(
+            db.prepare(`DELETE FROM sessions WHERE user_id = ?`).run(userId),
+            () => undefined
+          )
+      );
+    }
+  );
+}
 
-  db.prepare(`UPDATE users SET password_hash = ? WHERE id = ?`).run(bcrypt.hashSync(newPassword, 10), userId);
+export function upgradeAnonymousAccount(
+  userId: string,
+  username: string,
+  password: string
+): MaybePromise<AuthUser> {
+  const normalizedUsername = normalizeAccountUsername(username);
+  assertValidCredentials(password);
+  const passwordHash = bcrypt.hashSync(password, 10);
+
+  return flatMapMaybePromise(
+    db.prepare(`SELECT id, is_anonymous FROM users WHERE id = ?`).get(userId) as MaybePromise<
+      { id: string; is_anonymous: number } | undefined
+    >,
+    (row) => {
+      if (!row) {
+        throw new Error("Account not found.");
+      }
+      if (!row.is_anonymous) {
+        throw new Error("This account is already registered.");
+      }
+
+      // Upgrade in place on the SAME row so the user's games and stats (keyed by
+      // this id) are preserved.
+      return flatMapMaybePromise(assertUsernameAvailable(normalizedUsername, userId), () => {
+        const resolveUser = () =>
+          flatMapMaybePromise(getUserById(userId), (user) => {
+            if (!user) {
+              throw new Error("Account not found.");
+            }
+            return user;
+          });
+
+        let result: MaybePromise<unknown>;
+        try {
+          result = db
+            .prepare(`UPDATE users SET username = ?, password_hash = ?, is_anonymous = 0 WHERE id = ?`)
+            .run(normalizedUsername, passwordHash, userId);
+        } catch (error) {
+          if (isUsernameConflictError(error)) {
+            throw new Error("That username is already taken.");
+          }
+          throw error;
+        }
+
+        if (isPromiseLike(result)) {
+          return result.then(resolveUser, (error) => {
+            if (isUsernameConflictError(error)) {
+              throw new Error("That username is already taken.");
+            }
+            throw error;
+          });
+        }
+
+        return resolveUser();
+      });
+    }
+  );
 }
 
 export function signInAnonymously(): MaybePromise<string> {

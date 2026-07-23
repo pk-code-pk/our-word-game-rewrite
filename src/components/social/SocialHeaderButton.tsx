@@ -32,7 +32,7 @@ export function SocialHeaderButton({
       type={type}
       {...buttonProps}
       className={[
-        "inline-flex min-h-9 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-sm font-semibold transition sm:min-h-10 sm:gap-2 sm:px-3.5 sm:py-2",
+        "inline-flex min-h-11 items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-sm font-semibold transition sm:min-h-10 sm:gap-2 sm:px-3.5 sm:py-2",
         "focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300/70 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent",
         "disabled:cursor-not-allowed disabled:opacity-45",
         active ? activeStyles : baseStyles,

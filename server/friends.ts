@@ -5,7 +5,7 @@ import { db } from "./db.js";
 import { isValidUsername, isWaitingGameExpired, normalizeWord, sanitizeUsername } from "../shared/gameLogic.js";
 import { getWordValidationReason } from "../shared/wordBank.js";
 import { performJoinWaitingGameWithRunner } from "./gameService.js";
-import { emitGameEvent } from "./gameEvents.js";
+import { broadcastGameSignal } from "./realtime.js";
 import type {
   AuthUser,
   FriendRequestStatus,
@@ -1079,7 +1079,7 @@ export async function acceptGameInvite(
   }
 
   if (joinedGameId) {
-    emitGameEvent({ type: "updated", gameId: joinedGameId });
+    void broadcastGameSignal(joinedGameId, "updated");
   }
 
   return { gameId: joinedGameId };

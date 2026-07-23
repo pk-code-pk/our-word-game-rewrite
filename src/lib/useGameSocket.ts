@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { GameStateView } from "../../shared/types";
-import { api, getStoredToken } from "./api";
+import { api } from "./api";
 
-// Delay before falling back to HTTP polling. Lets the WS connection establish
-// (typically <500ms) without two transports racing each other on initial mount.
-const POLL_FALLBACK_DELAY_MS = 1_500;
-// If the server doesn't acknowledge a WS-submitted guess within this window,
-// fall back to HTTP. Empirically a healthy round-trip is <300ms even on slow
-// connections — anything longer means the socket is wedged.
-const WS_SUBMIT_TIMEOUT_MS = 3_000;
+// Safety poll interval. Supabase Realtime broadcasts are the primary update
+// path; this slow poll is a backstop for missed/dropped signals. It is
+// deliberately slow (20s) — the old 3s poll was a cost problem, and with
+// broadcast-driven refetches we no longer need aggressive polling.
+const SAFETY_POLL_INTERVAL_MS = 20_000;
 
 export interface SubmitGuessResult {
   matchCount: number;
@@ -34,38 +33,29 @@ export interface GameSocketResult {
   submitGuess: (payload: SubmitGuessPayload) => Promise<SubmitGuessResult>;
 }
 
-type ServerMessage =
-  | { type: "gameState"; state: GameStateView }
-  | { type: "gameEnded"; gameId: string }
-  | { type: "error"; message: string }
-  | { type: "pong" }
-  | {
-      type: "guessResult";
-      requestId: string;
-      ok: boolean;
-      result?: SubmitGuessResult;
-      error?: string;
-    };
-
-interface PendingSubmission {
-  resolve: (value: SubmitGuessResult) => void;
-  reject: (reason: Error) => void;
-  timeoutId: number;
-}
-
-const INITIAL_RECONNECT_DELAY_MS = 1_000;
-const MAX_RECONNECT_DELAY_MS = 30_000;
-const PING_INTERVAL_MS = 20_000;
-const POLL_INTERVAL_MS = 3_000;
-
-function buildSocketUrl(): string {
-  if (typeof window === "undefined") {
-    return "";
+// Lazily-created singleton Supabase client. Created on first use so a missing
+// env var (e.g. during tests or misconfigured builds) degrades to poll-only
+// updates instead of throwing at module load.
+let supabaseClient: SupabaseClient | null | undefined;
+function getSupabaseClient(): SupabaseClient | null {
+  if (supabaseClient !== undefined) {
+    return supabaseClient;
   }
-  const base = (import.meta.env.VITE_WS_URL as string | undefined)?.trim();
-  const origin = base ? base.replace(/\/$/, "") : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
-  const token = getStoredToken();
-  return token ? `${origin}/ws?token=${encodeURIComponent(token)}` : `${origin}/ws`;
+  const url = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.trim();
+  const anonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined)?.trim();
+  if (!url || !anonKey) {
+    supabaseClient = null;
+    return null;
+  }
+  try {
+    supabaseClient = createClient(url, anonKey, {
+      // No Supabase Auth session in play — we only use anonymous Realtime.
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+  } catch {
+    supabaseClient = null;
+  }
+  return supabaseClient;
 }
 
 export function useGameSocket(gameId: string | null): GameSocketResult {
@@ -75,18 +65,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
   const [connected, setConnected] = useState(false);
 
   const dataRef = useRef<GameSocketResponse | undefined>(undefined);
-  const connectedRef = useRef(false);
-  // Holds the live socket so the public submitGuess callback can use it
-  // without being recreated every render. The ref is set inside the effect
-  // and cleared on cleanup.
-  const wsRef = useRef<WebSocket | null>(null);
-  const pendingSubmissionsRef = useRef<Map<string, PendingSubmission>>(new Map());
   const gameIdRef = useRef<string | null>(gameId);
   gameIdRef.current = gameId;
 
   useEffect(() => {
     dataRef.current = undefined;
-    connectedRef.current = false;
     setData(undefined);
     setError(null);
     setLoading(true);
@@ -98,42 +81,11 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     }
 
     let cancelled = false;
-    let ws: WebSocket | null = null;
-    wsRef.current = null;
-    let reconnectAttempt = 0;
-    let reconnectTimer: number | null = null;
-    let pingTimer: number | null = null;
     let pollTimer: number | null = null;
-    let pollFallbackTimer: number | null = null;
     // Monotonic id for state-apply calls so a slow in-flight fetch can't
-    // overwrite newer state arriving from another source (WS or a later poll).
+    // overwrite newer state arriving from another refetch.
     let appliedStateSeq = 0;
     let latestRequestSeq = 0;
-
-    const clearReconnect = () => {
-      if (reconnectTimer !== null) {
-        window.clearTimeout(reconnectTimer);
-        reconnectTimer = null;
-      }
-    };
-
-    const clearPing = () => {
-      if (pingTimer !== null) {
-        window.clearInterval(pingTimer);
-        pingTimer = null;
-      }
-    };
-
-    const clearPoll = () => {
-      if (pollTimer !== null) {
-        window.clearInterval(pollTimer);
-        pollTimer = null;
-      }
-      if (pollFallbackTimer !== null) {
-        window.clearTimeout(pollFallbackTimer);
-        pollFallbackTimer = null;
-      }
-    };
 
     const applyState = (state: GameStateView | null, seq?: number) => {
       if (seq !== undefined && seq < appliedStateSeq) {
@@ -170,249 +122,67 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       }
     };
 
-    const startPolling = () => {
-      clearPoll();
-      pollTimer = window.setInterval(() => {
-        if (!cancelled && !connectedRef.current) {
-          void fetchState();
-        }
-      }, POLL_INTERVAL_MS);
-    };
-
-    const stopPolling = () => {
-      clearPoll();
-    };
-
-    const scheduleReconnect = () => {
+    // A broadcast signal carries no game data — it just tells us to refetch the
+    // viewer-specific state from the authoritative HTTP endpoint.
+    const refetchState = () => {
       if (cancelled) return;
-      const delay = Math.min(
-        INITIAL_RECONNECT_DELAY_MS * Math.pow(2, reconnectAttempt),
-        MAX_RECONNECT_DELAY_MS
-      );
-      reconnectAttempt += 1;
-      clearReconnect();
-      reconnectTimer = window.setTimeout(() => {
-        reconnectTimer = null;
-        if (!cancelled) {
-          openSocket();
-        }
-      }, delay);
+      void fetchState();
     };
 
-    const openSocket = () => {
+    // The game ended (e.g. lobby cancelled). Refetch so the server can report
+    // the terminal/absent state for this viewer.
+    const handleEnded = () => {
       if (cancelled) return;
-      clearReconnect();
-
-      try {
-        ws = new WebSocket(buildSocketUrl());
-        wsRef.current = ws;
-      } catch (cause) {
-        applyError(cause);
-        scheduleReconnect();
-        return;
-      }
-
-      ws.onopen = () => {
-        if (cancelled) {
-          ws?.close();
-          return;
-        }
-        reconnectAttempt = 0;
-        connectedRef.current = true;
-        setConnected(true);
-        setError(null);
-        stopPolling();
-
-        // Re-sync from the source of truth before relying on incremental WS
-        // pushes. Without this, the client can drift if changes happened while
-        // the socket was reconnecting — including during the brief gap on the
-        // initial connect after this hook mounts.
-        void fetchState();
-
-        try {
-          ws?.send(JSON.stringify({ type: "subscribe", gameId }));
-        } catch (cause) {
-          applyError(cause);
-        }
-
-        clearPing();
-        pingTimer = window.setInterval(() => {
-          if (ws?.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(JSON.stringify({ type: "ping" }));
-            } catch {
-              // ignore — close handler will trigger reconnect
-            }
-          }
-        }, PING_INTERVAL_MS);
-      };
-
-      ws.onmessage = (event) => {
-        if (cancelled) return;
-        let parsed: ServerMessage;
-        try {
-          parsed = JSON.parse(String(event.data)) as ServerMessage;
-        } catch {
-          return;
-        }
-
-        switch (parsed.type) {
-          case "gameState":
-            // Server-pushed state is authoritative and most-recent by definition.
-            applyState(parsed.state, ++latestRequestSeq);
-            return;
-          case "gameEnded":
-            applyState(null, ++latestRequestSeq);
-            return;
-          case "error":
-            applyError(new Error(parsed.message));
-            return;
-          case "pong":
-            return;
-          case "guessResult": {
-            const pending = pendingSubmissionsRef.current.get(parsed.requestId);
-            if (!pending) {
-              return;
-            }
-            pendingSubmissionsRef.current.delete(parsed.requestId);
-            window.clearTimeout(pending.timeoutId);
-            if (parsed.ok && parsed.result) {
-              pending.resolve(parsed.result);
-            } else {
-              pending.reject(new Error(parsed.error ?? "Unable to submit guess."));
-            }
-            return;
-          }
-        }
-      };
-
-      ws.onerror = () => {
-        // Let onclose handle reconnect
-      };
-
-      ws.onclose = (event) => {
-        clearPing();
-        connectedRef.current = false;
-        setConnected(false);
-        if (wsRef.current === ws) {
-          wsRef.current = null;
-        }
-        // Any submissions still pending on this socket will never see a reply
-        // here — reject them so submitGuess() can transparently fall back to
-        // HTTP. The submitGuess function catches this and retries.
-        for (const [requestId, pending] of pendingSubmissionsRef.current) {
-          window.clearTimeout(pending.timeoutId);
-          pending.reject(new Error("WebSocket disconnected."));
-          pendingSubmissionsRef.current.delete(requestId);
-        }
-        if (cancelled) return;
-
-        if (event.code === 1000) return;
-
-        if (event.code === 1008 || event.code === 4401 || event.code === 401) {
-          applyError(new Error("Not authenticated."));
-        }
-
-        // Fall back to polling while reconnecting so updates still arrive
-        startPolling();
-        scheduleReconnect();
-      };
+      void fetchState();
     };
 
-    const handleVisibilityChange = () => {
-      if (document.visibilityState !== "visible" || cancelled) return;
-      if (ws && ws.readyState === WebSocket.OPEN) return;
-      reconnectAttempt = 0;
-      clearReconnect();
-      openSocket();
-    };
-
+    // Initial load from the source of truth.
     void fetchState();
-    openSocket();
-    // Defer polling fallback briefly so it doesn't race with the WS handshake.
-    // If the WS opens within the delay, onopen calls stopPolling() and this is
-    // a no-op. If it doesn't, polling kicks in as the safety net.
-    pollFallbackTimer = window.setTimeout(() => {
-      pollFallbackTimer = null;
-      if (cancelled || connectedRef.current) return;
-      startPolling();
-    }, POLL_FALLBACK_DELAY_MS);
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("focus", handleVisibilityChange);
+    const client = getSupabaseClient();
+    const channel = client
+      ? client
+          .channel(`game:${gameId}`)
+          .on("broadcast", { event: "updated" }, () => refetchState())
+          .on("broadcast", { event: "ended" }, () => handleEnded())
+          .subscribe((status) => {
+            if (cancelled) return;
+            setConnected(status === "SUBSCRIBED");
+          })
+      : null;
+
+    // Slow safety poll: catches any signal we missed while (re)subscribing or
+    // if the Realtime connection is degraded. Also the sole update path when
+    // Supabase env is unconfigured (client === null).
+    pollTimer = window.setInterval(() => {
+      if (!cancelled) {
+        void fetchState();
+      }
+    }, SAFETY_POLL_INTERVAL_MS);
 
     return () => {
       cancelled = true;
-      clearReconnect();
-      clearPing();
-      clearPoll();
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      window.removeEventListener("focus", handleVisibilityChange);
-      for (const [requestId, pending] of pendingSubmissionsRef.current) {
-        window.clearTimeout(pending.timeoutId);
-        pending.reject(new Error("WebSocket closed."));
-        pendingSubmissionsRef.current.delete(requestId);
+      if (pollTimer !== null) {
+        window.clearInterval(pollTimer);
+        pollTimer = null;
       }
-      if (ws) {
-        ws.onopen = null;
-        ws.onmessage = null;
-        ws.onerror = null;
-        ws.onclose = null;
-        try {
-          ws.close(1000);
-        } catch {
-          // ignore
-        }
-        ws = null;
-        wsRef.current = null;
+      if (channel && client) {
+        // Unsubscribe and drop the channel so we don't leak subscriptions
+        // across gameId changes / unmounts.
+        void client.removeChannel(channel);
       }
     };
   }, [gameId]);
 
-  const submitGuess = useCallback(
-    async (payload: SubmitGuessPayload): Promise<SubmitGuessResult> => {
-      const currentGameId = gameIdRef.current;
-      const socket = wsRef.current;
-      if (currentGameId && socket && socket.readyState === WebSocket.OPEN) {
-        const requestId = `g-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-        try {
-          const result = await new Promise<SubmitGuessResult>((resolve, reject) => {
-            const timeoutId = window.setTimeout(() => {
-              pendingSubmissionsRef.current.delete(requestId);
-              reject(new Error("WebSocket submit timed out."));
-            }, WS_SUBMIT_TIMEOUT_MS);
-            pendingSubmissionsRef.current.set(requestId, { resolve, reject, timeoutId });
-            try {
-              socket.send(
-                JSON.stringify({
-                  type: "submitGuess",
-                  requestId,
-                  gameId: currentGameId,
-                  guessType: payload.type,
-                  text: payload.text,
-                })
-              );
-            } catch (cause) {
-              window.clearTimeout(timeoutId);
-              pendingSubmissionsRef.current.delete(requestId);
-              reject(cause instanceof Error ? cause : new Error("Failed to send guess."));
-            }
-          });
-          return result;
-        } catch {
-          // Fall through to HTTP. We swallow this error because the HTTP path
-          // is authoritative and will surface its own error if the guess is
-          // genuinely invalid (rather than just a transport hiccup).
-        }
-      }
-
-      if (!currentGameId) {
-        throw new Error("No active game.");
-      }
-      return api.submitGuess(currentGameId, payload);
-    },
-    []
-  );
+  const submitGuess = useCallback(async (payload: SubmitGuessPayload): Promise<SubmitGuessResult> => {
+    const currentGameId = gameIdRef.current;
+    if (!currentGameId) {
+      throw new Error("No active game.");
+    }
+    // Guesses always POST to the HTTP endpoint; the resulting mutation triggers
+    // a server-side broadcast that refetches state for both players.
+    return api.submitGuess(currentGameId, payload);
+  }, []);
 
   return { data, error, loading, connected, submitGuess };
 }

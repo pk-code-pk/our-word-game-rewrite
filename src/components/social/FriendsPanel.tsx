@@ -3,14 +3,12 @@ import { toast } from "sonner";
 import type { FriendView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
 import { api } from "../../lib/api";
-import { usePollingQuery } from "../../lib/usePollingQuery";
+import { useSocialData } from "./SocialDataProvider";
 import { SocialHeaderButton } from "./SocialHeaderButton";
 import { SocialOverlay } from "./SocialOverlay";
 
 interface FriendsPanelProps {
   onQuickInvite?: (friend: FriendView) => Promise<void>;
-  refreshKey?: number;
-  onSocialMutated?: () => void;
   className?: string;
   forceOpen?: boolean;
   onForceOpenConsumed?: () => void;
@@ -37,8 +35,6 @@ function getInitials(friend: FriendView) {
 
 export function FriendsPanel({
   onQuickInvite,
-  refreshKey,
-  onSocialMutated,
   className = "",
   forceOpen,
   onForceOpenConsumed,
@@ -59,23 +55,15 @@ export function FriendsPanel({
   const addInputRef = useRef<HTMLInputElement | null>(null);
 
   const canUseFriends = Boolean(user && !user.isAnonymous);
-  // 5s polling + soft refetch when refreshKey changes. See GuestInvitesPanel
-  // for the rationale.
-  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [], {
-    intervalMs: 5000,
-    enabled: canUseFriends,
-  });
-  const { refetch: refetchSocial } = socialQuery;
+  // Reads from the shared social poll hoisted into SocialDataProvider so the
+  // Friends/Inbox panels don't each hit /api/social independently.
+  const { data: socialData, error: socialError, loading: socialLoading, refresh: refetchSocial } =
+    useSocialData();
 
-  useEffect(() => {
-    if (refreshKey === undefined) return;
-    refetchSocial();
-  }, [refreshKey, refetchSocial]);
-
-  const social = socialQuery.data?.social;
+  const social = socialData?.social;
   const friends = social?.friends ?? [];
   const friendCount = friends.length;
-  const outgoingPendingInvites = social?.outgoingGameInvites.filter((invite) => invite.status === "pending") ?? [];
+  const outgoingPendingInvites = (social?.outgoingGameInvites ?? []).filter((invite) => invite.status === "pending");
   const pendingInviteByFriendId = useMemo(
     () => new Map(outgoingPendingInvites.map((invite) => [invite.receiver.userId, invite] as const)),
     [outgoingPendingInvites]
@@ -97,7 +85,6 @@ export function FriendsPanel({
       setAddUsername("");
       setShowAddFriend(false);
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Failed to send friend request.");
     } finally {
@@ -111,7 +98,6 @@ export function FriendsPanel({
       await api.removeFriend(friend.userId);
       toast.success(`${friend.displayName} removed from friends.`);
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to remove friend.");
     } finally {
@@ -135,7 +121,6 @@ export function FriendsPanel({
       await onQuickInvite(friend);
       setOpen(false);
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to invite friend.");
     } finally {
@@ -220,7 +205,7 @@ export function FriendsPanel({
           </div>
         </section>
 
-        {socialQuery.error && social ? (
+        {socialError && social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             Showing your last good friend list while refresh is unavailable.
           </div>
@@ -236,7 +221,7 @@ export function FriendsPanel({
             </div>
           </div>
 
-          {socialQuery.loading && !social ? (
+          {socialLoading && !social ? (
             <div className="space-y-3 px-4 py-4">
               <div className="h-16 animate-pulse rounded-2xl bg-zinc-100" />
               <div className="h-16 animate-pulse rounded-2xl bg-zinc-100" />

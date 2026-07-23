@@ -22,7 +22,7 @@ export function SignOutButton() {
         onClick={() => setOpen(true)}
         title={label}
         aria-label={`Profile: ${label}`}
-        className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-left transition hover:bg-zinc-800"
+        className="inline-flex min-h-11 items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-left transition hover:bg-zinc-800 sm:min-h-9"
       >
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-white text-[10px] font-black text-zinc-900">
           {badgeLetter}

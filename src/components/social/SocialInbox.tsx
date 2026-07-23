@@ -3,15 +3,13 @@ import { toast } from "sonner";
 import type { FriendRequestView, GameInviteView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
 import { api } from "../../lib/api";
-import { usePollingQuery } from "../../lib/usePollingQuery";
+import { useSocialData } from "./SocialDataProvider";
 import { SocialHeaderButton } from "./SocialHeaderButton";
 import { SocialOverlay } from "./SocialOverlay";
 
 interface SocialInboxProps {
   onOpenGame?: (gameId: string) => void;
   displayName?: string;
-  refreshKey?: number;
-  onSocialMutated?: () => void;
   secretWord: string;
   className?: string;
   forceOpen?: boolean;
@@ -48,8 +46,6 @@ export function resolveInviteJoinDisplayName(displayName: string | undefined, ac
 export function SocialInbox({
   onOpenGame,
   displayName,
-  refreshKey,
-  onSocialMutated,
   secretWord,
   className = "",
   forceOpen,
@@ -68,21 +64,14 @@ export function SocialInbox({
   }, [forceOpen, onForceOpenConsumed]);
 
   const canUseInbox = Boolean(user && !user.isAnonymous);
-  // 5s polling + soft refetch when refreshKey changes. See GuestInvitesPanel.
-  const inboxQuery = usePollingQuery(() => api.getSocialOverview(), [], {
-    intervalMs: 5000,
-    enabled: canUseInbox,
-  });
-  const { refetch: refetchInbox } = inboxQuery;
+  // Reads from the shared social poll hoisted into SocialDataProvider so the
+  // Friends/Inbox panels don't each hit /api/social independently.
+  const { data: socialData, error: inboxError, loading: inboxLoading, refresh: refetchInbox } =
+    useSocialData();
 
-  useEffect(() => {
-    if (refreshKey === undefined) return;
-    refetchInbox();
-  }, [refreshKey, refetchInbox]);
-
-  const social = inboxQuery.data?.social;
+  const social = socialData?.social;
   const incomingRequests = social?.incomingRequests ?? [];
-  const incomingGameInvites = social?.incomingGameInvites.filter((invite) => invite.status === "pending") ?? [];
+  const incomingGameInvites = (social?.incomingGameInvites ?? []).filter((invite) => invite.status === "pending");
   const unreadCount = incomingRequests.length + incomingGameInvites.length;
   const currentUsername = user?.username ?? "";
   const joinDisplayName = resolveInviteJoinDisplayName(displayName, currentUsername);
@@ -108,7 +97,6 @@ export function SocialInbox({
         toast.success("Friend request declined.");
       }
       refetchInbox();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to update request.");
     } finally {
@@ -123,7 +111,6 @@ export function SocialInbox({
         await api.declineGameInvite(invite.inviteId);
         toast.success("Game invite declined.");
         refetchInbox();
-        onSocialMutated?.();
         return;
       }
 
@@ -144,7 +131,6 @@ export function SocialInbox({
       });
       toast.success("Invite accepted. Joining game...");
       refetchInbox();
-      onSocialMutated?.();
       setOpen(false);
       onOpenGame?.(response.gameId);
     } catch (error) {
@@ -180,20 +166,20 @@ export function SocialInbox({
         contentClassName="space-y-4"
       >
 
-        {inboxQuery.error && social ? (
+        {inboxError && social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             Showing your last good inbox snapshot while refresh is unavailable.
           </div>
         ) : null}
 
-        {inboxQuery.loading && !social ? (
+        {inboxLoading && !social ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-3xl bg-zinc-100" />
             <div className="h-28 animate-pulse rounded-3xl bg-zinc-100" />
           </div>
-        ) : inboxQuery.error && !social ? (
+        ) : inboxError && !social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm leading-6 text-amber-900">
-            {inboxQuery.error.message}
+            {inboxError.message}
           </div>
         ) : (
           <>

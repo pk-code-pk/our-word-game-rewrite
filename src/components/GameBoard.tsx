@@ -411,7 +411,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           <button
             onClick={() => void handleExit()}
             disabled={isLeavingWaitingLobby}
-            className="inline-flex items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
+            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
           >
             {isWaitingForOpponent ? (isLeavingWaitingLobby ? "Cancelling..." : "Cancel waiting lobby") : "Back to menu"}
           </button>
@@ -497,7 +497,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     <button
                       type="button"
                       onClick={shuffle}
-                      className="ml-1 inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 active:bg-emerald-100"
+                      className="ml-1 inline-flex min-h-11 items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 active:bg-emerald-100"
                     >
                       Shuffle
                       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
@@ -537,7 +537,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   ref={guessInputRef}
                   type="text"
                   value={guessText}
-                  onChange={(e) => setGuessText(e.target.value.toUpperCase())}
+                  onChange={(e) => setGuessText(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
                   placeholder={guessType === "fourLetter" ? "4-letter guess" : "5-letter guess"}
                   maxLength={5}
                   autoCapitalize="characters"
@@ -552,7 +552,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       type="button"
                       onClick={() => setGuessType("fourLetter")}
                       disabled={isSubmitting}
-                      className={`inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                      className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
                         guessType === "fourLetter"
                           ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
                           : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
@@ -565,7 +565,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       type="button"
                       onClick={() => setGuessType("fullWord")}
                       disabled={isSubmitting}
-                      className={`inline-flex items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
+                      className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
                         guessType === "fullWord"
                           ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
                           : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
@@ -583,7 +583,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       (guessType === "fourLetter" && guessText.length !== 4) ||
                       (guessType === "fullWord" && guessText.length !== 5)
                     }
-                    className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 disabled:opacity-40"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 disabled:opacity-40"
                     aria-label="Submit guess"
                   >
                     {isSubmitting ? "…" : "↑"}
@@ -641,16 +641,25 @@ function GuessColumn(props: {
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: React.UIEventHandler<HTMLDivElement>;
 }) {
-  const allGuesses = props.optimisticGuess
-    ? [
-        ...props.guesses,
-        {
-          ...props.optimisticGuess,
-          matchCount: props.optimisticGuess.matchCount ?? 0,
-          isCorrect: props.optimisticGuess.isCorrect ?? false,
-        },
-      ]
-    : props.guesses;
+  // Skip the optimistic row once the committed server guess with the same
+  // text+type has landed. There's a brief window where the server row arrives
+  // before the parent's clearing effect runs; without this guard both rows
+  // render together and the list flickers with a duplicate.
+  const optimistic = props.optimisticGuess;
+  const optimisticAlreadyCommitted =
+    optimistic != null &&
+    props.guesses.some((g) => g.text === optimistic.text && g.type === optimistic.type);
+  const allGuesses =
+    optimistic && !optimisticAlreadyCommitted
+      ? [
+          ...props.guesses,
+          {
+            ...optimistic,
+            matchCount: optimistic.matchCount ?? 0,
+            isCorrect: optimistic.isCorrect ?? false,
+          },
+        ]
+      : props.guesses;
 
   return (
     <div className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:p-5">

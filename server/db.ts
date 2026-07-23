@@ -121,7 +121,43 @@ function splitStatements(sql: string) {
 
 function translateQueryForPostgres(sql: string) {
   let index = 0;
-  return sql.replace(/\?/g, () => `$${++index}`);
+  let result = "";
+  let inStringLiteral = false;
+
+  for (let i = 0; i < sql.length; i += 1) {
+    const char = sql[i];
+
+    if (inStringLiteral) {
+      result += char;
+      if (char === "'") {
+        // A doubled single quote ('') is an escaped quote inside the literal,
+        // not the end of the string — consume both and stay inside.
+        if (sql[i + 1] === "'") {
+          result += "'";
+          i += 1;
+        } else {
+          inStringLiteral = false;
+        }
+      }
+      continue;
+    }
+
+    if (char === "'") {
+      inStringLiteral = true;
+      result += char;
+      continue;
+    }
+
+    if (char === "?") {
+      index += 1;
+      result += `$${index}`;
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
 }
 
 function normalizeRow<T extends SqlRow>(row: SqlRow | undefined): T | undefined {
@@ -588,6 +624,7 @@ export function initDb(): MaybePromise<void> {
 
       CREATE INDEX IF NOT EXISTS idx_guesses_game_id ON guesses(game_id);
       CREATE INDEX IF NOT EXISTS idx_guesses_player_id ON guesses(player_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_guesses_player_guessnum ON guesses(player_id, guess_number);
 
       CREATE TABLE IF NOT EXISTS chat_messages (
         id TEXT PRIMARY KEY,
@@ -684,6 +721,13 @@ export function initDb(): MaybePromise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS idx_game_invites_pending_target
         ON game_invites(game_id, receiver_user_id)
         WHERE status = 'pending';
+
+      CREATE TABLE IF NOT EXISTS rate_limit_hits (
+        bucket TEXT NOT NULL,
+        identifier TEXT NOT NULL,
+        hit_at BIGINT NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_rate_limit_hits ON rate_limit_hits(bucket, identifier, hit_at);
     `);
 
     if (!localDb) {
@@ -764,6 +808,7 @@ export function initDb(): MaybePromise<void> {
 
         CREATE INDEX IF NOT EXISTS idx_guesses_game_id ON guesses(game_id);
         CREATE INDEX IF NOT EXISTS idx_guesses_player_id ON guesses(player_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_guesses_player_guessnum ON guesses(player_id, guess_number);
 
         CREATE TABLE IF NOT EXISTS chat_messages (
           id TEXT PRIMARY KEY,
@@ -860,6 +905,13 @@ export function initDb(): MaybePromise<void> {
         CREATE UNIQUE INDEX IF NOT EXISTS idx_game_invites_pending_target
           ON game_invites(game_id, receiver_user_id)
           WHERE status = 'pending';
+
+        CREATE TABLE IF NOT EXISTS rate_limit_hits (
+          bucket TEXT NOT NULL,
+          identifier TEXT NOT NULL,
+          hit_at BIGINT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_rate_limit_hits ON rate_limit_hits(bucket, identifier, hit_at);
       `);
 
       await ensureColumnRemote("users", "username", "username TEXT");

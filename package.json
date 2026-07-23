@@ -16,6 +16,7 @@
     "verify": "npm run test && npm run lint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.110.8",
     "@types/canvas-confetti": "^1.9.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/express": "^5.0.6",

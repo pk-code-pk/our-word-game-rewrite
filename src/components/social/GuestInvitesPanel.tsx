@@ -3,7 +3,7 @@ import { toast } from "sonner";
 import type { GameInviteView } from "../../../shared/types";
 import { useAuth } from "../../lib/auth";
 import { api } from "../../lib/api";
-import { usePollingQuery } from "../../lib/usePollingQuery";
+import { useSocialData } from "./SocialDataProvider";
 import { SocialHeaderButton } from "./SocialHeaderButton";
 import { SocialOverlay } from "./SocialOverlay";
 
@@ -12,8 +12,6 @@ interface GuestInvitesPanelProps {
   onOpenGame?: (gameId: string) => void;
   secretWord: string;
   displayName?: string;
-  refreshKey?: number;
-  onSocialMutated?: () => void;
   className?: string;
   forceOpen?: boolean;
   onForceOpenConsumed?: () => void;
@@ -43,8 +41,6 @@ export function GuestInvitesPanel({
   onOpenGame,
   secretWord,
   displayName,
-  refreshKey,
-  onSocialMutated,
   className = "",
   forceOpen,
   onForceOpenConsumed,
@@ -64,24 +60,12 @@ export function GuestInvitesPanel({
   }, [forceOpen, onForceOpenConsumed]);
 
   const enabled = Boolean(user);
-  // 5s interval (was 2s) — the panel still feels live for invites that
-  // typically arrive over many seconds, while halving render churn.
-  const socialQuery = usePollingQuery(() => api.getSocialOverview(), [], {
-    intervalMs: 5000,
-    enabled,
-  });
-  const { refetch: refetchSocial } = socialQuery;
+  // Reads from the shared social poll hoisted into SocialDataProvider instead
+  // of polling /api/social itself.
+  const { data: socialData, error: socialError, loading: socialLoading, refresh: refetchSocial } =
+    useSocialData();
 
-  // refreshKey is bumped by sibling social panels (and by our own mutations
-  // through onSocialMutated). React to it with a soft refetch instead of
-  // listing it in usePollingQuery's deps — that previously restarted the
-  // entire polling loop, clearing error state and toggling loading flags.
-  useEffect(() => {
-    if (refreshKey === undefined) return;
-    refetchSocial();
-  }, [refreshKey, refetchSocial]);
-
-  const social = socialQuery.data?.social;
+  const social = socialData?.social;
   const incoming = useMemo(
     () =>
       (social?.incomingGameInvites ?? [])
@@ -112,7 +96,6 @@ export function GuestInvitesPanel({
       await onSendInvite(username);
       setInviteUsername("");
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to send invite.");
     } finally {
@@ -126,7 +109,6 @@ export function GuestInvitesPanel({
       await api.cancelGameInvite(invite.inviteId);
       toast.success("Invite cancelled.");
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to cancel invite.");
     } finally {
@@ -153,7 +135,6 @@ export function GuestInvitesPanel({
       });
       toast.success("Invite accepted. Joining game...");
       refetchSocial();
-      onSocialMutated?.();
       setOpen(false);
       onOpenGame?.(response.gameId);
     } catch (error) {
@@ -169,7 +150,6 @@ export function GuestInvitesPanel({
       await api.declineGameInvite(invite.inviteId);
       toast.success("Invite declined.");
       refetchSocial();
-      onSocialMutated?.();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to decline invite.");
     } finally {
@@ -229,20 +209,20 @@ export function GuestInvitesPanel({
         contentClassName="space-y-4"
         footer={footer}
       >
-        {socialQuery.error && social ? (
+        {socialError && social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             Showing your last good snapshot while refresh is unavailable.
           </div>
         ) : null}
 
-        {socialQuery.loading && !social ? (
+        {socialLoading && !social ? (
           <div className="space-y-3">
             <div className="h-24 animate-pulse rounded-3xl bg-zinc-100" />
             <div className="h-24 animate-pulse rounded-3xl bg-zinc-100" />
           </div>
-        ) : socialQuery.error && !social ? (
+        ) : socialError && !social ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-5 text-sm leading-6 text-amber-900">
-            {socialQuery.error.message}
+            {socialError.message}
           </div>
         ) : (
           <>
