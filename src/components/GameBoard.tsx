@@ -425,7 +425,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {isWaitingForOpponent && (
           <div className="rounded-lg border border-zinc-200 bg-white p-5 text-center shadow-sm">
-            <div className="animate-pulse text-base font-medium text-zinc-600">Waiting for opponent...</div>
+            <div className="animate-pulse text-base font-medium text-zinc-600">Matching you with an opponent...</div>
+            <div className="mt-1 text-sm text-zinc-500">
+              We'll pair you with the next player online. Share this code to invite someone directly:
+            </div>
             <div className="mt-2 font-mono text-sm font-semibold tracking-widest text-zinc-500">{gameState.game.code}</div>
           </div>
         )}

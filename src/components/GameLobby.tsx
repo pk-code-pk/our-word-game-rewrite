@@ -145,7 +145,7 @@ export function GameLobby({
               disabled={!hasUsername || isFinding || wordStatus === "checking"}
               className="rounded-lg bg-zinc-900 py-3 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {isFinding ? "Finding..." : "Join game"}
+              {isFinding ? "Finding opponent..." : "Find match"}
             </button>
             <button
               type="button"
@@ -163,6 +163,12 @@ export function GameLobby({
               Accept invite
             </button>
           </div>
+
+          <p className="text-center text-xs text-zinc-500">
+            <span className="font-medium text-zinc-600">Find match</span> pairs you with the next player online — you'll wait
+            briefly for an opponent. Use <span className="font-medium text-zinc-600">Invite friend</span> or{" "}
+            <span className="font-medium text-zinc-600">Accept invite</span> to play someone specific.
+          </p>
         </div>
       </div>
     </section>
