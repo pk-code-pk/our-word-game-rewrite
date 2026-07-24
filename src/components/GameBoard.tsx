@@ -361,19 +361,18 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType, pending: true });
     setGuessText("");
     keepMyGuessesPinnedRef.current = true;
-    window.requestAnimationFrame(() => {
-      if (window.innerWidth < 1024) {
-        // Mobile: dismiss the keyboard after a guess. Re-focusing here made iOS
-        // pan the page again on every submit (preventScroll is not honored),
-        // compounding the shift the user saw as "shoots up too high". And the
-        // next action after a guess is reading the result and marking letters
-        // on the alphabet, which the keyboard was covering anyway.
-        guessInputRef.current?.blur();
-      } else {
-        // Desktop: keep focus so the next guess can be typed immediately.
+    if (window.innerWidth < 1024) {
+      // Mobile: dismiss the keyboard after a guess, synchronously so the
+      // keyboard-Go path and the submit-button path are frame-identical.
+      // (Re-focusing here compounded iOS pans; and the next action after a
+      // guess is marking letters on the alphabet the keyboard was covering.)
+      guessInputRef.current?.blur();
+    } else {
+      // Desktop: keep focus so the next guess can be typed immediately.
+      window.requestAnimationFrame(() => {
         guessInputRef.current?.focus({ preventScroll: true });
-      }
-    });
+      });
+    }
 
     setIsSubmitting(true);
     try {
@@ -646,6 +645,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     maxLength={guessMaxLength}
                     autoCapitalize="characters"
                     spellCheck={false}
+                    // "Go" makes the iOS keyboard's action key SUBMIT the form —
+                    // the same clean path as the submit button — instead of a
+                    // Done-style key that only dismisses the keyboard.
+                    enterKeyHint="go"
                     className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
                     onBlur={handleGuessInputBlur}
