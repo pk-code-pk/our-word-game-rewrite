@@ -69,53 +69,52 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
         </button>
       )}
 
-      <SocialOverlay
-        open={isOpen}
-        onClose={close}
-        eyebrow="FourFive"
-        title="How to play"
-        subtitle="Guess your opponent's five-letter word before they guess yours."
-        size="md"
-      >
-        <div className="space-y-6">
-          <ul className="list-disc space-y-2 pl-5 text-sm leading-6 text-zinc-700">
-            <li>Both players pick a secret 5-letter word. No repeated letters.</li>
-            <li>Guess 4-letter words to get clues about their word.</li>
-            <li>Guess their full 5-letter word to win.</li>
-          </ul>
+      <SocialOverlay open={isOpen} onClose={close} eyebrow="FourFive" title="How to play" size="md">
+        <div className="space-y-6 text-sm leading-6 text-zinc-700">
+          <div className="space-y-1">
+            <p className="font-bold text-zinc-900">The Goal:</p>
+            <p>Guess your opponent&rsquo;s 5-letter word before they guess yours.</p>
+          </div>
 
-          <div className="space-y-5">
-            <p className="text-sm font-bold text-zinc-900">Examples</p>
+          <div className="space-y-4">
+            <p className="font-bold text-zinc-900">How to Play:</p>
+
+            <p>
+              <span className="font-bold text-zinc-900">Pick a Secret Word:</span> Both players choose a 5-letter word
+              with no repeating letters.
+            </p>
 
             <div className="space-y-2">
-              <div className="flex flex-wrap items-center gap-3">
+              <p>
+                <span className="font-bold text-zinc-900">Make a Guess:</span> Guess a 4-letter word with no repeating
+                letters.
+              </p>
+              <p>
+                The game will tell you how many letters from your guess are in your opponent&rsquo;s secret word. (For
+                example, if you guess &quot;PORK&quot; and the number is 2, it means 2 of those letters are in your
+                opponent&rsquo;s word).
+              </p>
+              <div className="flex flex-wrap items-center gap-3 pt-1">
                 <Word word="PORK" />
-                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">1</span>
+                <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">2</span>
               </div>
-              <p className="text-sm leading-6 text-zinc-700">
-                <span className="font-bold text-zinc-900">1</span> of these letters is in their word. It doesn't say
-                which one, or where.
-              </p>
             </div>
 
             <div className="space-y-2">
-              <Word word="SLATE" tone="green" />
-              <p className="text-sm leading-6 text-zinc-700">
-                Guess their exact word and you <span className="font-bold text-zinc-900">win instantly</span>. A wrong
-                5-letter guess tells you nothing.
+              <p>
+                <span className="font-bold text-zinc-900">Track the letters:</span> Tap a letter once to turn it green
+                if it is in your opponent&rsquo;s word. Tap the letter twice to turn it red if it is not in their word.
               </p>
-            </div>
-
-            <div className="space-y-2">
               <span className="inline-flex gap-1">
                 <Tile tone="green">A</Tile>
                 <Tile tone="red">B</Tile>
               </span>
-              <p className="text-sm leading-6 text-zinc-700">
-                Tap the alphabet to take notes: green means in their word, red means ruled out. Notes are private and
-                don't affect the game.
-              </p>
             </div>
+
+            <p>
+              <span className="font-bold text-zinc-900">Solve:</span> Use the numbers from each guess to deduce your
+              opponent&rsquo;s 5-letter word!
+            </p>
           </div>
         </div>
       </SocialOverlay>
