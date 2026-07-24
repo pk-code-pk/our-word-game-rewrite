@@ -31,6 +31,35 @@ function isRecoverableInviteLobbyError(message: string) {
 export default function App() {
   const { user } = useAuth();
 
+  // On mobile, pin the app shell to the visual viewport. iOS Safari ignores
+  // `interactive-widget=resizes-content`, so when the keyboard opens the layout
+  // viewport stays full-height and the browser scrolls the page to the focused
+  // input — the "it jumps / scrolls up when I tap the text box" bug. Locking the
+  // shell to `visualViewport.height` (position:fixed) means there is nothing
+  // off-screen to scroll to: the shell shrinks to the space above the keyboard
+  // and the pinned composer sits right on top of it. Desktop keeps normal flow.
+  const [shellStyle, setShellStyle] = useState<CSSProperties>({});
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) {
+      return;
+    }
+    const apply = () => {
+      setShellStyle(
+        window.innerWidth >= 1024
+          ? {}
+          : { position: "fixed", top: 0, left: 0, right: 0, height: `${vv.height}px` }
+      );
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      window.removeEventListener("orientationchange", apply);
+    };
+  }, []);
+
   return (
     <div
       style={shellStyle}
@@ -61,35 +90,6 @@ function Content() {
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
   const [openInbox, setOpenInbox] = useState(false);
   const [openGuestInvites, setOpenGuestInvites] = useState(false);
-
-  // On mobile, pin the app shell to the visual viewport. iOS Safari ignores
-  // `interactive-widget=resizes-content`, so when the keyboard opens the layout
-  // viewport stays full-height and the browser scrolls the page to the focused
-  // input — the "it jumps / scrolls up when I tap the text box" bug. Locking the
-  // shell to `visualViewport.height` (position:fixed) means there is nothing
-  // off-screen to scroll to: the shell shrinks to the space above the keyboard
-  // and the pinned composer sits right on top of it. Desktop keeps normal flow.
-  const [shellStyle, setShellStyle] = useState<CSSProperties>({});
-  useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) {
-      return;
-    }
-    const apply = () => {
-      setShellStyle(
-        window.innerWidth >= 1024
-          ? {}
-          : { position: "fixed", top: 0, left: 0, right: 0, height: `${vv.height}px` }
-      );
-    };
-    apply();
-    vv.addEventListener("resize", apply);
-    window.addEventListener("orientationchange", apply);
-    return () => {
-      vv.removeEventListener("resize", apply);
-      window.removeEventListener("orientationchange", apply);
-    };
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
