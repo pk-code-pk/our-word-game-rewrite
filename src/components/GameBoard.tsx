@@ -258,10 +258,38 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     };
   }, [currentPlayer?.id, gameId]);
 
-  // Mobile keyboard: intentionally hands-off. iOS natively pans the page so
-  // the focused input sits above the keyboard, and every scripted "assist" we
-  // tried (scrollIntoView nudges, viewport listeners) fought that pan and read
-  // as a bounce. Native behavior wins.
+  // Mobile keyboard: hands-off while it's OPEN (iOS's native pan is the smooth
+  // path; scripted corrections during the animation read as a bounce). But iOS
+  // has a known bug (widely reported against iOS 26 Safari/WebView: Apple
+  // forums threads 800154/800125) where CLOSING the keyboard fails to reset
+  // the viewport pan, leaving the page stuck scrolled up with a blank gap
+  // under the composer. Community-consensus fix: correct ONCE at the
+  // keyboard-dismiss boundary (focusout), after the dismiss animation, with a
+  // scroll reset plus a 1px scroll nudge that forces Safari to recompute
+  // fixed/layout positioning.
+  const handleGuessInputBlur = () => {
+    if (window.innerWidth >= 1024) {
+      return;
+    }
+    window.setTimeout(() => {
+      const active = document.activeElement;
+      // Focus moved to another field: keyboard is still up, don't touch.
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
+        return;
+      }
+      const vv = window.visualViewport;
+      if (vv && vv.scale !== 1) {
+        return; // never yank a pinch-zoomed viewport
+      }
+      const stuckOffset = Math.max(vv?.offsetTop ?? 0, window.scrollY);
+      // Only correct a real keyboard-sized leftover gap, not a small legit scroll.
+      if (stuckOffset > 40) {
+        window.scrollTo(0, 0);
+        window.scrollBy(0, -1);
+        window.scrollBy(0, 1);
+      }
+    }, 250);
+  };
 
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -559,6 +587,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     spellCheck={false}
                     className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
+                    onBlur={handleGuessInputBlur}
                   />
                   <button
                     type="submit"
