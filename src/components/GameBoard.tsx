@@ -296,12 +296,16 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (vv.scale !== 1) return; // never yank a pinch-zoomed viewport
 
-      // Only correct a real keyboard-sized leftover gap, not a small legit scroll.
+      // Correct ANY residual. Screen-recording analysis showed iOS routinely
+      // leaves a few px of scroll/pan after dismissal (offTop 4 / scrollY 4 in
+      // the captured frames) — below the old 40px threshold, so it was never
+      // fixed and the page sat subtly misaligned. Small residuals snap
+      // invisibly; only keyboard-sized ones get the animated glide.
       const stuckOffset = Math.max(vv.offsetTop, window.scrollY);
-      if (stuckOffset <= 40) return;
+      if (stuckOffset < 1) return;
 
       const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (prefersReduced) {
+      if (stuckOffset <= 40 || prefersReduced) {
         window.scrollTo(0, 0);
         window.scrollBy(0, -1);
         window.scrollBy(0, 1);
