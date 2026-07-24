@@ -37,6 +37,57 @@ export default function App() {
   // shells, transform-following) turned it into a visible bounce. The layout
   // is a plain 100svh column with the composer at the bottom, and the page is
   // allowed to move while typing.
+
+  // On-device viewport debug HUD: open the app with #vvdebug in the URL to
+  // get a live readout of scrollY / visualViewport height & offsetTop. Used
+  // to diagnose iOS keyboard jank on real hardware, where no desktop tool can
+  // reproduce the behavior. Zero cost unless the hash is present.
+  useEffect(() => {
+    if (!window.location.hash.includes("vvdebug")) {
+      return;
+    }
+    const hud = document.createElement("div");
+    hud.style.cssText =
+      "position:fixed;top:4px;left:4px;z-index:99999;background:rgba(0,0,0,0.82);color:#4ade80;" +
+      "font:11px/1.5 ui-monospace,Menlo,monospace;padding:6px 8px;border-radius:6px;pointer-events:none;white-space:pre";
+    document.body.appendChild(hud);
+    const vv = window.visualViewport;
+    let lastEvent = "init";
+    const render = () => {
+      hud.textContent =
+        `scrollY ${Math.round(window.scrollY)}\n` +
+        `vv.h ${vv ? Math.round(vv.height) : "-"} / win ${window.innerHeight}\n` +
+        `vv.offTop ${vv ? Math.round(vv.offsetTop) : "-"}\n` +
+        `focus ${document.activeElement?.tagName ?? "-"}\n` +
+        `last ${lastEvent}`;
+    };
+    const on = (name: string) => () => {
+      lastEvent = `${name} @${Math.round(performance.now() / 100) / 10}s`;
+      render();
+    };
+    const handlers: Array<[EventTarget, string]> = [
+      [window, "scroll"],
+      [window, "resize"],
+      [window, "focusin"],
+      [window, "focusout"],
+    ];
+    if (vv) {
+      handlers.push([vv, "resize"], [vv, "scroll"]);
+    }
+    const bound = handlers.map(([t, n]) => {
+      const h = on(n);
+      t.addEventListener(n, h, { passive: true });
+      return [t, n, h] as const;
+    });
+    const interval = window.setInterval(render, 250);
+    render();
+    return () => {
+      window.clearInterval(interval);
+      bound.forEach(([t, n, h]) => t.removeEventListener(n, h));
+      hud.remove();
+    };
+  }, []);
+
   return (
     <div className="flex h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900 lg:h-auto lg:min-h-[100svh]">
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
