@@ -53,8 +53,15 @@ export default function App() {
     document.body.appendChild(hud);
     const vv = window.visualViewport;
     let lastEvent = "init";
+    // Bundle fingerprint so a recording proves WHICH build the phone runs —
+    // ends every "is it cached?" debate.
+    const build =
+      document
+        .querySelector<HTMLScriptElement>('script[src*="assets/index-"]')
+        ?.src.match(/index-([^.]+)\.js/)?.[1] ?? "?";
     const render = () => {
       hud.textContent =
+        `build ${build}\n` +
         `scrollY ${Math.round(window.scrollY)}\n` +
         `vv.h ${vv ? Math.round(vv.height) : "-"} / win ${window.innerHeight}\n` +
         `vv.offTop ${vv ? Math.round(vv.offsetTop) : "-"}\n` +
