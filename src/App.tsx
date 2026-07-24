@@ -45,17 +45,39 @@ export default function App() {
       return;
     }
     const apply = () => {
-      setShellStyle(
-        window.innerWidth >= 1024
-          ? {}
-          : { position: "fixed", top: 0, left: 0, right: 0, height: `${vv.height}px` }
-      );
+      if (window.innerWidth >= 1024) {
+        setShellStyle({});
+        return;
+      }
+      // iOS doesn't resize the layout viewport for the keyboard — it PANS it
+      // upward to reveal the focused input, dragging position:fixed elements
+      // (this shell) out of view. Two-part counter:
+      // 1. Scroll the window back to 0 — once the shell is sized to the visual
+      //    viewport everything (composer included) fits above the keyboard, so
+      //    iOS has no reason to re-pan. Guarded on scale===1 so we never fight
+      //    a pinch-zoom pan.
+      // 2. Pin the shell to vv.offsetTop as a fallback for iOS versions that
+      //    refuse the scroll reset — the shell then rides the visible region.
+      if (vv.scale === 1 && (window.scrollY !== 0 || vv.offsetTop !== 0)) {
+        window.scrollTo(0, 0);
+      }
+      setShellStyle({
+        position: "fixed",
+        top: `${vv.offsetTop}px`,
+        left: 0,
+        right: 0,
+        height: `${vv.height}px`,
+      });
     };
     apply();
     vv.addEventListener("resize", apply);
+    // The keyboard pan fires visualViewport "scroll" (not resize) — without
+    // this listener the shell never hears about the push-up.
+    vv.addEventListener("scroll", apply);
     window.addEventListener("orientationchange", apply);
     return () => {
       vv.removeEventListener("resize", apply);
+      vv.removeEventListener("scroll", apply);
       window.removeEventListener("orientationchange", apply);
     };
   }, []);
