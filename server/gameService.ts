@@ -1603,11 +1603,22 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
       gameId,
       userId: user.id,
     });
-    const alphabet = parseAlphabet(player.alphabet_json);
-    alphabet[letter] = assertValidAlphabetState(state);
-    await db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
+    // Atomic single-statement update. The old read-modify-write (parse JSON in
+    // JS, write the whole blob back) let two concurrent letter updates clobber
+    // each other — both read the same base, last write wins, first mark lost.
+    // jsonb_set touches only this letter, so concurrent updates to different
+    // letters both survive.
+    const validState = assertValidAlphabetState(state);
+    const rows = (await db
+      .prepare(
+        `UPDATE players
+         SET alphabet_json = jsonb_set(COALESCE(alphabet_json, '{}')::jsonb, ARRAY[?], to_jsonb(?::text))::text
+         WHERE id = ?
+         RETURNING alphabet_json`
+      )
+      .all(letter, validState, player.id)) as Array<{ alphabet_json: string }>;
     void broadcastGameSignal(gameId, "updated");
-    return alphabet;
+    return parseAlphabet(rows[0]?.alphabet_json ?? "{}");
   })();
 }
 

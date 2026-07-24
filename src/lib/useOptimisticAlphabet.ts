@@ -99,8 +99,20 @@ export function useOptimisticAlphabet(
         state: desiredState,
       });
     } catch (error) {
+      // Do NOT re-queue the failed state — that used to make this retry
+      // forever (toast spam + unbounded requests) when the server kept
+      // rejecting, e.g. a mark landing just as the game completed. Revert the
+      // letter to the server's truth instead; if the user tapped again during
+      // the flight, that newer intent is in pendingStateRef and still goes
+      // out below.
       if (!pendingStateRef.current.has(letter)) {
-        pendingStateRef.current.set(letter, desiredState);
+        latestIntentRef.current.delete(letter);
+        setOptimisticAlphabet((current) => {
+          if (!(letter in current)) return current;
+          const next = { ...current };
+          delete next[letter];
+          return next;
+        });
       }
       toast.error(error instanceof Error ? error.message : "Failed to update alphabet");
     } finally {
