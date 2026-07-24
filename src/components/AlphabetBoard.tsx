@@ -65,14 +65,25 @@ export function AlphabetBoard({ displayedAlphabet, onToggleLetter, disabled = fa
         })}
       </div>
 
-      {/* Legend — caption under the letter grid */}
-      <div className="flex flex-col gap-2 border-t border-zinc-100 px-3 py-3 text-xs font-medium text-zinc-600 lg:gap-3 lg:px-5 lg:py-4 lg:text-base">
+      {/* Legend — one compact row on mobile (vertical space is scarce there),
+          full two-row version on desktop */}
+      <div className="flex items-center justify-center gap-4 border-t border-zinc-100 px-3 py-1.5 text-[11px] font-medium text-zinc-600 lg:hidden">
+        <span className="flex items-center gap-1.5">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-[10px] font-bold text-white underline decoration-2 underline-offset-2" aria-hidden="true">A</span>
+          <span>in word</span>
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-[10px] font-bold text-white line-through decoration-2" aria-hidden="true">A</span>
+          <span>not in word</span>
+        </span>
+      </div>
+      <div className="hidden flex-col gap-3 border-t border-zinc-100 px-5 py-4 text-base font-medium text-zinc-600 lg:flex">
         <span className="flex items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-xs font-bold text-white underline decoration-2 underline-offset-2 lg:h-8 lg:w-8" aria-hidden="true">A</span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border-2 border-emerald-600 bg-emerald-500 font-mono text-xs font-bold text-white underline decoration-2 underline-offset-2" aria-hidden="true">A</span>
           <span>= letter is in the opponent&apos;s word</span>
         </span>
         <span className="flex items-center gap-2">
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white line-through decoration-2 lg:h-8 lg:w-8" aria-hidden="true">A</span>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white line-through decoration-2" aria-hidden="true">A</span>
           <span>= letter is not in the opponent&apos;s word</span>
         </span>
       </div>

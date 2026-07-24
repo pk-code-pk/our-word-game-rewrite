@@ -533,7 +533,7 @@ function GuessColumn(props: {
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="min-h-0 flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(14rem,28dvh)] lg:flex-none"
+        className="min-h-[5.5rem] flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(14rem,28dvh)] lg:min-h-0 lg:flex-none"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {allGuesses.length === 0 ? (
