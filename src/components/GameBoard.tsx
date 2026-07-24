@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
@@ -38,10 +38,64 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const gameStateQuery = useGameSocket(gameId);
   const gameState = gameStateQuery.data?.gameState;
   const [guessText, setGuessText] = useState("");
-  const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
+  const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
+  const guessMaxLength = guessType === "fourLetter" ? 4 : 5;
+
+  // Switching modes re-caps the input: picking "4" trims a longer draft so the
+  // box always holds at most the mode's length.
+  const selectGuessType = (type: "fourLetter" | "fullWord") => {
+    setGuessType(type);
+    if (type === "fourLetter") {
+      setGuessText((prev) => prev.slice(0, 4));
+    }
+  };
+  // Word rearranger: green (confirmed) letters shown as tiles you can shuffle
+  // into anagram candidates. Compact + only rendered when it's useful (2+
+  // letters), so it costs no vertical space early game.
+  const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
+  const [committedGreens, setCommittedGreens] = useState<Set<string>>(new Set());
+  const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
+  const flipSnapshotRef = useRef<Map<number, DOMRect> | null>(null);
+
+  const capturePositions = useCallback(() => {
+    const snap = new Map<number, DOMRect>();
+    greenTileRefs.current.forEach((el, charCode) => {
+      snap.set(charCode, el.getBoundingClientRect());
+    });
+    flipSnapshotRef.current = snap;
+  }, []);
+
+  useLayoutEffect(() => {
+    const snapshot = flipSnapshotRef.current;
+    if (!snapshot || snapshot.size === 0) return;
+    flipSnapshotRef.current = null;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+
+    greenTileRefs.current.forEach((el, charCode) => {
+      const first = snapshot.get(charCode);
+      if (!first) return;
+      const last = el.getBoundingClientRect();
+      const dx = first.left - last.left;
+      const dy = first.top - last.top;
+      if (dx === 0 && dy === 0) return;
+
+      el.animate(
+        [
+          { transform: `translate(${dx}px, ${dy - 12}px) scale(1.08)`, offset: 0 },
+          { transform: "translate(0, 0) scale(1)", offset: 1 },
+        ],
+        { duration: 450, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "none" }
+      );
+    });
+  }, [greenLetterOrder]);
+
+  // Debounce additions: the alphabet cycle is unknown → present → absent, so
+  // marking a letter red passes through green; without the delay it would
+  // flash into the rearranger. Removals are immediate.
+  const pendingGreenTimersRef = useRef<Map<string, number>>(new Map());
   const announcedCompletionRef = useRef<string | null>(null);
   const guessFormRef = useRef<HTMLFormElement | null>(null);
   const guessInputRef = useRef<HTMLInputElement | null>(null);
@@ -62,6 +116,58 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     currentPlayer?.alphabet,
     alphabetDisabled
   );
+
+  useEffect(() => {
+    const GREEN_COMMIT_DELAY_MS = 600;
+    const timers = pendingGreenTimersRef.current;
+
+    setCommittedGreens((prev) => {
+      let next: Set<string> | null = null;
+
+      // Drop committed letters that are no longer present.
+      for (const letter of prev) {
+        if (displayedAlphabet[letter] !== "present") {
+          if (!next) next = new Set(prev);
+          next.delete(letter);
+        }
+      }
+
+      for (const letter of Object.keys(displayedAlphabet)) {
+        const isPresent = displayedAlphabet[letter] === "present";
+        const isCommitted = (next ?? prev).has(letter);
+        const hasTimer = timers.has(letter);
+
+        if (isPresent && !isCommitted && !hasTimer) {
+          const timer = window.setTimeout(() => {
+            timers.delete(letter);
+            setCommittedGreens((current) => {
+              if (current.has(letter)) return current;
+              const updated = new Set(current);
+              updated.add(letter);
+              return updated;
+            });
+          }, GREEN_COMMIT_DELAY_MS);
+          timers.set(letter, timer);
+        } else if (!isPresent && hasTimer) {
+          window.clearTimeout(timers.get(letter)!);
+          timers.delete(letter);
+        }
+      }
+
+      return next ?? prev;
+    });
+  }, [displayedAlphabet]);
+
+  // Clear any in-flight commit timers when the board unmounts.
+  useEffect(() => {
+    const timers = pendingGreenTimersRef.current;
+    return () => {
+      for (const timer of timers.values()) {
+        window.clearTimeout(timer);
+      }
+      timers.clear();
+    };
+  }, []);
 
   // Clear optimistic guess once the real state catches up. A safety timeout
   // also clears it if the server quietly drops/rejects the guess (e.g. invalid
@@ -192,18 +298,14 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     if (!currentPlayer || !guessText.trim() || isSubmitting) return;
 
     const word = guessText.trim().toUpperCase();
-    if (guessType === "fourLetter" && word.length !== 4) {
-      toast.error("Four-letter guesses must be exactly 4 letters");
-      return;
-    }
-    if (guessType === "fullWord" && word.length !== 5) {
-      toast.error("Full word guesses must be exactly 5 letters");
+    const expectedLength = guessType === "fourLetter" ? 4 : 5;
+    if (word.length !== expectedLength) {
+      toast.error(`${guessType === "fourLetter" ? "Four-letter" : "Full word"} guesses must be exactly ${expectedLength} letters`);
       return;
     }
 
     // Short-circuit obvious junk before the server roundtrip. The server still
     // has its own dictionary check; this just avoids a flicker on misspells.
-    const expectedLength = guessType === "fourLetter" ? 4 : 5;
     const validate = await loadWordValidator();
     if (!validate(word, expectedLength)) {
       toast.error("Not a valid word");
@@ -317,16 +419,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col lg:grid lg:min-h-0 lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
-        <div className="flex justify-end">
-          <button
-            onClick={() => void handleExit()}
-            disabled={isLeavingWaitingLobby}
-            className="inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-200 bg-white px-3 py-1 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50"
-          >
-            {isWaitingForOpponent ? (isLeavingWaitingLobby ? "Cancelling..." : "Cancel waiting lobby") : "Back to menu"}
-          </button>
-        </div>
-
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             Connection issue — retrying...
@@ -340,6 +432,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               We'll pair you with the next player online. Share this code to invite someone directly:
             </div>
             <div className="mt-2 font-mono text-sm font-semibold tracking-widest text-zinc-500">{gameState.game.code}</div>
+            <button
+              onClick={() => void handleExit()}
+              disabled={isLeavingWaitingLobby}
+              className="mt-4 inline-flex min-h-11 items-center justify-center rounded-lg border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-600 transition hover:bg-zinc-50 active:scale-[0.98]"
+            >
+              {isLeavingWaitingLobby ? "Cancelling..." : "Cancel waiting lobby"}
+            </button>
           </div>
         )}
 
@@ -366,12 +465,83 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
         {opponent && (
           <div className="flex min-h-0 flex-1 flex-col gap-3 lg:block lg:space-y-5">
-            <section className="rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-6 lg:py-4">
-              <p className="text-center text-sm font-medium text-zinc-700 lg:text-base">
-                {opponent.username} has found{" "}
-                <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
-              </p>
-            </section>
+            {/* Status row doubles as the nav row: back button lives inline so it
+                doesn't cost a whole row of vertical space on mobile. */}
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                onClick={() => void handleExit()}
+                className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-600 transition hover:bg-zinc-50 active:scale-[0.96]"
+                aria-label="Back to menu"
+                title="Back to menu"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+                  <path d="m15 18-6-6 6-6" />
+                </svg>
+              </button>
+              <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-6 lg:py-4">
+                <p className="text-center text-sm font-medium text-zinc-700 lg:text-base">
+                  {opponent.username} has found{" "}
+                  <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
+                </p>
+              </section>
+            </div>
+
+            {(() => {
+              const sorted = Array.from(committedGreens)
+                .map((letter) => letter.toUpperCase())
+                .sort();
+              // Not useful below 2 letters — render nothing and give the space
+              // back to the guess history.
+              if (sorted.length < 2) return null;
+              const displayed =
+                greenLetterOrder &&
+                greenLetterOrder.length === sorted.length &&
+                [...greenLetterOrder].sort().join("") === sorted.join("")
+                  ? greenLetterOrder
+                  : sorted;
+              const shuffle = () => {
+                capturePositions();
+                const arr = [...sorted];
+                for (let i = arr.length - 1; i > 0; i--) {
+                  const j = Math.floor(Math.random() * (i + 1));
+                  [arr[i], arr[j]] = [arr[j], arr[i]];
+                }
+                setGreenLetterOrder(arr);
+              };
+              return (
+                <section className="flex shrink-0 items-center gap-1.5 rounded-xl border border-zinc-200 bg-emerald-50 px-3 py-1.5 lg:px-6 lg:py-3 lg:gap-2.5">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5 lg:gap-2.5">
+                    {displayed.map((letter) => (
+                      <span
+                        key={letter}
+                        ref={(el) => {
+                          if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
+                          else greenTileRefs.current.delete(letter.charCodeAt(0));
+                        }}
+                        className="inline-flex h-9 min-w-9 items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 font-mono text-base font-bold tracking-widest text-white lg:h-11 lg:min-w-[3rem] lg:text-xl"
+                      >
+                        {letter}
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={shuffle}
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-md border border-emerald-300 bg-white text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 active:scale-[0.94] active:bg-emerald-100"
+                    aria-label="Shuffle letters"
+                    title="Shuffle letters"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-[18px] w-[18px]">
+                      <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H20" />
+                      <path d="m18 2 4 4-4 4" />
+                      <path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" />
+                      <path d="M20 18h-3.9c-1.3 0-2.5-.6-3.3-1.7l-.5-.8" />
+                      <path d="m18 14 4 4-4 4" />
+                    </svg>
+                  </button>
+                </section>
+              );
+            })()}
 
             <section className="flex min-h-0 flex-1 flex-col lg:block lg:flex-none">
               <GuessColumn
@@ -404,60 +574,57 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 onSubmit={handleSubmitGuess}
                 className="shrink-0 space-y-2.5 rounded-xl border border-zinc-200 bg-zinc-50 p-3"
               >
-                <input
-                  ref={guessInputRef}
-                  type="text"
-                  value={guessText}
-                  onChange={(e) => setGuessText(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
-                  placeholder={guessType === "fourLetter" ? "4-letter guess" : "5-letter guess"}
-                  maxLength={5}
-                  autoCapitalize="characters"
-                  spellCheck={false}
-                  className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
-                  disabled={isSubmitting}
-                  onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
-                />
                 <div className="flex items-center gap-2">
-                  <div className="grid flex-1 grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setGuessType("fourLetter")}
-                      disabled={isSubmitting}
-                      className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                        guessType === "fourLetter"
-                          ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
-                          : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
-                      }`}
-                      aria-pressed={guessType === "fourLetter"}
-                    >
-                      4-letter guess
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setGuessType("fullWord")}
-                      disabled={isSubmitting}
-                      className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition ${
-                        guessType === "fullWord"
-                          ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
-                          : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
-                      }`}
-                      aria-pressed={guessType === "fullWord"}
-                    >
-                      5-letter guess
-                    </button>
-                  </div>
+                  <input
+                    ref={guessInputRef}
+                    type="text"
+                    value={guessText}
+                    onChange={(e) =>
+                      setGuessText(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, guessMaxLength))
+                    }
+                    placeholder={guessType === "fourLetter" ? "4-letter guess" : "5-letter guess"}
+                    maxLength={guessMaxLength}
+                    autoCapitalize="characters"
+                    spellCheck={false}
+                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
+                    disabled={isSubmitting}
+                    onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
+                  />
                   <button
                     type="submit"
-                    disabled={
-                      !guessText.trim() ||
-                      isSubmitting ||
-                      (guessType === "fourLetter" && guessText.length !== 4) ||
-                      (guessType === "fullWord" && guessText.length !== 5)
-                    }
-                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 disabled:opacity-40"
+                    disabled={!guessText.trim() || isSubmitting || guessText.length !== guessMaxLength}
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40"
                     aria-label="Submit guess"
                   >
                     {isSubmitting ? "…" : "↑"}
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => selectGuessType("fourLetter")}
+                    disabled={isSubmitting}
+                    className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
+                      guessType === "fourLetter"
+                        ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                        : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                    }`}
+                    aria-pressed={guessType === "fourLetter"}
+                  >
+                    4-letter guess
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectGuessType("fullWord")}
+                    disabled={isSubmitting}
+                    className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
+                      guessType === "fullWord"
+                        ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
+                        : "border-transparent text-zinc-700 hover:border-zinc-200 hover:bg-white/70"
+                    }`}
+                    aria-pressed={guessType === "fullWord"}
+                  >
+                    5-letter guess
                   </button>
                 </div>
               </form>
@@ -542,7 +709,7 @@ function GuessColumn(props: {
           allGuesses.map((guess) => (
             <div
               key={guess.id}
-              className={`flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending === true ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+              className={`guess-row-enter flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending === true ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
             >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}
