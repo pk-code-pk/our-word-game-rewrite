@@ -865,7 +865,9 @@ function renderGuessResult(guess: { isCorrect: boolean; type: "fourLetter" | "fu
     return <span className="rounded-full bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-800">Wrong word</span>;
   }
   return (
-    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+    // The match count is the payoff of every probe — render it big and bold
+    // so it reads at a glance on both mobile and desktop.
+    <span className="rounded-full bg-zinc-100 px-3 py-0.5 font-mono text-lg font-black tabular-nums text-zinc-800 lg:px-3.5 lg:text-2xl">
       {guess.matchCount}
     </span>
   );
