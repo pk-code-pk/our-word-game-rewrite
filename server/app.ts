@@ -81,6 +81,12 @@ function parseExpectedLength(value: unknown): 4 | 5 | undefined {
 function respondWithRouteError(res: express.Response, error: unknown, fallbackMessage: string) {
   const message = error instanceof Error ? error.message : fallbackMessage;
   const status = error instanceof RateLimitError ? 429 : message === "You must be signed in." ? 401 : 400;
+  // Rejections were previously invisible server-side: when a player reported a
+  // guess "disappearing", the logs had no record of the 400 or its reason.
+  // req is threaded via res.req (Express sets it) to keep call sites unchanged.
+  console.warn(
+    `[route-reject] ${res.req?.method ?? "?"} ${res.req?.originalUrl ?? "?"} -> ${status}: ${message}`
+  );
   res.status(status).json({ error: message });
 }
 
