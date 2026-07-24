@@ -106,14 +106,14 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
                 if it is in your opponent&rsquo;s word. Tap the letter twice to turn it red if it is not in their word.
               </p>
               <span className="inline-flex gap-1">
-                <Tile tone="green">A</Tile>
-                <Tile tone="red">B</Tile>
+                <Tile tone="green">P</Tile>
+                <Tile tone="red">K</Tile>
               </span>
             </div>
 
             <p>
               <span className="font-bold text-zinc-900">Solve:</span> Use the numbers from each guess to deduce your
-              opponent&rsquo;s 5-letter word!
+              opponent&rsquo;s 5-letter word.
             </p>
           </div>
         </div>
