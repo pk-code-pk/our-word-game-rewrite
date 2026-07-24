@@ -276,69 +276,57 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    // Correct the moment the keyboard finishes dismissing (visual viewport
-    // back to ~full height), not on a blind timer. Firing during the dead
-    // beat after the animation made the correction read as a second, separate
-    // jump. Glide instead of teleport; hard-settle only if the glide didn't
-    // take (some iOS builds ignore smooth scrolls to the window).
-    let done = false;
-    const cleanup = () => {
-      vv.removeEventListener("resize", onViewportResize);
-      window.clearTimeout(fallbackTimer);
-    };
-    const correct = () => {
-      if (done) return;
-      done = true;
-      cleanup();
-
+    // Screen-recording forensics (HUD frame at the moment of the "big tan
+    // gap"): while the keyboard is open iOS scrolls the page ~keyboard-height
+    // PAST the document end (scrollY 330 + offsetTop 330 with vv.height 384)
+    // to keep the input visible — that overscroll region is hidden behind the
+    // keyboard. On dismissal the keyboard slides away BEFORE iOS restores the
+    // scroll, exposing the beyond-the-page background as a tan void. Waiting
+    // for the viewport to restore (previous approach) is exactly too late.
+    //
+    // Fix: zero the scroll IMMEDIATELY at blur, while the keyboard still
+    // covers the region — visually silent, and when the keyboard slides away
+    // the page is already where it belongs. Repeat on each viewport event
+    // during the dismiss animation and once after it settles, in case iOS
+    // re-applies its own restore mid-animation.
+    const correctNow = () => {
       const active = document.activeElement;
       // Focus moved to another field: keyboard is still up, don't touch.
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (vv.scale !== 1) return; // never yank a pinch-zoomed viewport
+      if (Math.max(vv.offsetTop, window.scrollY) < 1) return;
+      window.scrollTo(0, 0);
+    };
 
-      // Correct ANY residual. Screen-recording analysis showed iOS routinely
-      // leaves a few px of scroll/pan after dismissal (offTop 4 / scrollY 4 in
-      // the captured frames) — below the old 40px threshold, so it was never
-      // fixed and the page sat subtly misaligned. Small residuals snap
-      // invisibly; only keyboard-sized ones get the animated glide.
-      const stuckOffset = Math.max(vv.offsetTop, window.scrollY);
-      if (stuckOffset < 1) return;
-
-      const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (stuckOffset <= 40 || prefersReduced) {
-        window.scrollTo(0, 0);
-        window.scrollBy(0, -1);
-        window.scrollBy(0, 1);
-        return;
-      }
-
-      // Native smooth scrolling is too fast/harsh here and its speed isn't
-      // tunable, so ease back manually: ~300ms decelerating glide to the top.
-      const startY = window.scrollY;
-      const DURATION_MS = 300;
-      const start = performance.now();
-      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-      const step = (now: number) => {
-        const t = Math.min(1, (now - start) / DURATION_MS);
-        window.scrollTo(0, Math.round(startY * (1 - easeOutCubic(t))));
-        if (t < 1) {
-          window.requestAnimationFrame(step);
-        } else if (Math.max(vv.offsetTop, window.scrollY) > 1) {
-          // Nudge Safari to recompute fixed positioning if a remainder is stuck.
-          window.scrollTo(0, 0);
+    const cleanup = () => {
+      vv.removeEventListener("resize", onViewportEvent);
+      vv.removeEventListener("scroll", onViewportEvent);
+      window.clearTimeout(settleTimer);
+    };
+    const onViewportEvent = () => {
+      correctNow();
+      if (vv.height >= window.innerHeight - 60) {
+        // Keyboard fully gone: one final pass (plus the 1px nudge that forces
+        // Safari to recompute fixed positioning if offsetTop is stuck), then
+        // stop listening.
+        cleanup();
+        correctNow();
+        if (vv.offsetTop >= 1) {
           window.scrollBy(0, -1);
           window.scrollBy(0, 1);
         }
-      };
-      window.requestAnimationFrame(step);
-    };
-    const onViewportResize = () => {
-      if (vv.height >= window.innerHeight - 60) {
-        correct();
       }
     };
-    vv.addEventListener("resize", onViewportResize);
-    const fallbackTimer = window.setTimeout(correct, 450);
+
+    correctNow();
+    vv.addEventListener("resize", onViewportEvent);
+    vv.addEventListener("scroll", onViewportEvent);
+    // Safety: if no viewport events arrive (keyboard was already closed or
+    // events were coalesced), settle once and detach.
+    const settleTimer = window.setTimeout(() => {
+      cleanup();
+      correctNow();
+    }, 600);
   };
 
   const submitCurrentGuess = async () => {
