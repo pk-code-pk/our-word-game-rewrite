@@ -43,14 +43,17 @@ body {
 
 /* New guess rows slide in instead of popping. Reduced-motion users get an
    instant appearance via the global media-query reset below. */
+/* Fade + slight scale, deliberately NOT a translate: rows are appended at the
+   bottom edge of a clipped scroll pane, and a slide-up-from-below start frame
+   renders partially past the clip boundary before "correcting" into place. */
 @keyframes guess-enter {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: scale(1);
   }
 }
 .guess-row-enter {
