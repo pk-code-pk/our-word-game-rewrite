@@ -301,7 +301,11 @@ function Content() {
 
   return (
     <SocialDataProvider>
-      <header className="sticky top-0 z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur">
+      {/* Sticky only on desktop, where the page actually scrolls. On mobile the
+          shell is a fixed one-screen column, so sticky buys nothing — and iOS
+          recomputes sticky positioning during keyboard scroll churn, which made
+          the header flicker in and out on dismissal. */}
+      <header className="z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur lg:sticky lg:top-0">
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
           <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
 
