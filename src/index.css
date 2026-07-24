@@ -13,14 +13,22 @@ body,
   min-height: 100%;
 }
 
+/* Match the page color on html too, so anything beyond the document (iOS
+   keyboard overscroll, rubber-banding) shows the same uniform color. */
+html {
+  background-color: var(--color-page);
+}
+
 body {
   /* svh (small viewport height) stays fixed as the mobile URL bar shows/hides,
      unlike dvh which recomputes on scroll and makes the page height jump. */
   min-height: 100svh;
   font-family: "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: #18181b;
-  background:
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.95), rgba(242, 240, 235, 0.95) 38%, rgba(234, 228, 217, 1) 100%);
+  /* ONE flat page color everywhere. The old radial gradient made the iOS
+     keyboard overscroll region (which renders in the plain background color)
+     visibly mismatch the page, so any scroll-restore lag showed up as a "tan
+     gap". Uniform color makes that region indistinguishable from the page. */
   background-color: var(--color-page);
   overflow-x: clip;
   text-rendering: optimizeLegibility;

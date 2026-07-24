@@ -280,57 +280,40 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    // Screen-recording forensics (HUD frame at the moment of the "big tan
-    // gap"): while the keyboard is open iOS scrolls the page ~keyboard-height
-    // PAST the document end (scrollY 330 + offsetTop 330 with vv.height 384)
-    // to keep the input visible — that overscroll region is hidden behind the
-    // keyboard. On dismissal the keyboard slides away BEFORE iOS restores the
-    // scroll, exposing the beyond-the-page background as a tan void. Waiting
-    // for the viewport to restore (previous approach) is exactly too late.
-    //
-    // Fix: zero the scroll IMMEDIATELY at blur, while the keyboard still
-    // covers the region — visually silent, and when the keyboard slides away
-    // the page is already where it belongs. Repeat on each viewport event
-    // during the dismiss animation and once after it settles, in case iOS
-    // re-applies its own restore mid-animation.
-    const correctNow = () => {
+    // HANDS OFF during the dismissal: iOS's own scroll-restore animation is
+    // smooth, and correcting at blur time shifted the whole page (header pop /
+    // flash at the top). With the page background now one uniform color, the
+    // overscroll region iOS exposes during the animation is indistinguishable
+    // from the page, so there is nothing to hide. The only thing left to
+    // repair is the documented iOS bug where the restore never happens: after
+    // the viewport is back to full height and iOS has had time to finish, if
+    // the pan/scroll is still stuck, snap it back with the recompute nudge.
+    const cleanup = () => {
+      vv.removeEventListener("resize", onRestored);
+      window.clearTimeout(fallbackTimer);
+    };
+    const fixIfStuck = () => {
       const active = document.activeElement;
       // Focus moved to another field: keyboard is still up, don't touch.
       if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
       if (vv.scale !== 1) return; // never yank a pinch-zoomed viewport
       if (Math.max(vv.offsetTop, window.scrollY) < 1) return;
       window.scrollTo(0, 0);
+      window.scrollBy(0, -1);
+      window.scrollBy(0, 1);
     };
-
-    const cleanup = () => {
-      vv.removeEventListener("resize", onViewportEvent);
-      vv.removeEventListener("scroll", onViewportEvent);
-      window.clearTimeout(settleTimer);
-    };
-    const onViewportEvent = () => {
-      correctNow();
+    const onRestored = () => {
       if (vv.height >= window.innerHeight - 60) {
-        // Keyboard fully gone: one final pass (plus the 1px nudge that forces
-        // Safari to recompute fixed positioning if offsetTop is stuck), then
-        // stop listening.
         cleanup();
-        correctNow();
-        if (vv.offsetTop >= 1) {
-          window.scrollBy(0, -1);
-          window.scrollBy(0, 1);
-        }
+        // Give iOS's own restore animation time to finish before judging it stuck.
+        window.setTimeout(fixIfStuck, 300);
       }
     };
-
-    correctNow();
-    vv.addEventListener("resize", onViewportEvent);
-    vv.addEventListener("scroll", onViewportEvent);
-    // Safety: if no viewport events arrive (keyboard was already closed or
-    // events were coalesced), settle once and detach.
-    const settleTimer = window.setTimeout(() => {
+    vv.addEventListener("resize", onRestored);
+    const fallbackTimer = window.setTimeout(() => {
       cleanup();
-      correctNow();
-    }, 600);
+      fixIfStuck();
+    }, 900);
   };
 
   const submitCurrentGuess = async () => {

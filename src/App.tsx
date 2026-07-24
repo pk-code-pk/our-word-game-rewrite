@@ -89,7 +89,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="flex h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900 lg:h-auto lg:min-h-[100svh]">
+    <div className="flex h-[100svh] flex-col overflow-x-clip bg-[#F2F0EB] text-zinc-900 lg:h-auto lg:min-h-[100svh]">
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
