@@ -471,8 +471,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="flex flex-1 flex-col lg:grid lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
-      <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
+    <div className="flex min-h-0 flex-1 flex-col lg:grid lg:min-h-fit lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:min-h-fit lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             Connection issue. Retrying...
@@ -518,7 +518,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
 
         {opponent && (
-          <div className="flex flex-1 flex-col gap-3 lg:block lg:space-y-5">
+          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:block lg:min-h-fit lg:space-y-5">
             {/* Status row doubles as the nav row: back button lives inline so it
                 doesn't cost a whole row of vertical space on mobile. */}
             <div className="flex shrink-0 items-center gap-2">
@@ -598,7 +598,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               );
             })()}
 
-            <section className="flex flex-1 flex-col lg:block lg:flex-none">
+            {/* min-h here (not just on the card) so flex can never shrink this
+                section below the card's floor — that's what previously let the
+                card overflow underneath the alphabet. */}
+            <section className="flex min-h-[7.5rem] flex-1 flex-col lg:block lg:min-h-fit lg:flex-none">
               <GuessColumn
                 title="My guesses"
                 elementId="my-guesses"

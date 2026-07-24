@@ -38,7 +38,7 @@ export default function App() {
   // is a plain 100svh column with the composer at the bottom, and the page is
   // allowed to move while typing.
   return (
-    <div className="flex min-h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
+    <div className="flex h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900 lg:h-auto lg:min-h-[100svh]">
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
@@ -291,8 +291,8 @@ function Content() {
         </div>
       </header>
 
-      <main className="flex flex-1 flex-col px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
+      <main className="flex min-h-0 flex-1 flex-col px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
+        <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">
