@@ -327,7 +327,15 @@ function Content() {
                     onGameStart={(gameId) => {
                       setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                     }}
-                    onPlayWithFriend={() => setOpenFriendsPanel(true)}
+                    onPlayWithFriend={() => {
+                      // Guests can't use the registered-only friends list, but they
+                      // CAN invite by username via the guest invite composer.
+                      if (user?.isAnonymous) {
+                        setOpenGuestInvites(true);
+                      } else {
+                        setOpenFriendsPanel(true);
+                      }
+                    }}
                     onAcceptInvite={() => {
                       if (user?.isAnonymous) {
                         setOpenGuestInvites(true);
