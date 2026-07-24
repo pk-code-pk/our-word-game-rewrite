@@ -122,6 +122,25 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     alphabetDisabled
   );
 
+  // Desktop power-shortcut: hold Shift and press a letter key to cycle its
+  // mark on the alphabet board, no mouse travel needed. Works even while the
+  // guess input is focused (capitals are never legitimate input there — the
+  // field uppercases everything anyway), but never steals keys from other
+  // text fields like chat or social search.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (!/^[a-zA-Z]$/.test(e.key)) return;
+      const active = document.activeElement;
+      const isTextField = active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement;
+      if (isTextField && active !== guessInputRef.current) return;
+      e.preventDefault();
+      toggleLetter(e.key.toUpperCase());
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [toggleLetter]);
+
   useEffect(() => {
     const GREEN_COMMIT_DELAY_MS = 600;
     const timers = pendingGreenTimersRef.current;
@@ -416,7 +435,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   if (gameStateQuery.loading && !gameState) {
     return (
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_400px]">
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_480px]">
         <div className="min-w-0 space-y-4 rounded-xl border border-zinc-200 bg-white p-6">
           <div className="h-6 w-40 animate-pulse rounded-full bg-zinc-100" />
           <div className="h-4 w-64 animate-pulse rounded-full bg-zinc-100" />
@@ -459,7 +478,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       className={`flex min-h-0 flex-1 flex-col lg:min-h-fit lg:flex-none ${
         gameState.game.status === "completed"
           ? "lg:mx-auto lg:w-full lg:max-w-2xl"
-          : "lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5"
+          : "lg:grid lg:grid-cols-[minmax(0,1fr)_480px] lg:gap-5"
       }`}
     >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:min-h-fit lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
@@ -563,7 +582,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 </svg>
               </button>
               <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 lg:px-6 lg:py-4">
-                <p className="truncate text-center text-sm font-medium text-zinc-700 lg:text-base">
+                <p className="truncate text-center text-sm font-medium text-zinc-700 lg:text-lg">
                   <span className="font-semibold">{opponent.username}</span>
                   <span className="mx-1.5 text-zinc-400">·</span>
                   <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span>
@@ -605,7 +624,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
                           else greenTileRefs.current.delete(letter.charCodeAt(0));
                         }}
-                        className="inline-flex h-9 min-w-9 items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 font-mono text-base font-bold tracking-widest text-white lg:h-11 lg:min-w-[3rem] lg:text-xl"
+                        className="inline-flex h-9 min-w-9 items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-1.5 font-mono text-base font-bold tracking-widest text-white lg:h-14 lg:min-w-[3.5rem] lg:text-2xl"
                       >
                         {letter}
                       </span>
@@ -694,7 +713,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                         void submitCurrentGuess();
                       }
                     }}
-                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
+                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest lg:py-3 lg:text-xl text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
                     onBlur={handleGuessInputBlur}
                   />
@@ -712,7 +731,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                       e.preventDefault();
                       void submitCurrentGuess();
                     }}
-                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40"
+                    className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold lg:min-h-[3.25rem] lg:min-w-[3.25rem] lg:text-xl text-white transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40"
                     aria-label="Submit guess"
                   >
                     {isSubmitting ? "…" : "↑"}
@@ -804,14 +823,14 @@ function GuessColumn(props: {
   return (
     <div className="flex min-h-[7.5rem] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:min-h-0 lg:flex-none lg:p-5">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-semibold text-zinc-700 lg:text-base">{props.title}</h3>
-        <span className="text-sm font-semibold text-zinc-700 lg:text-base"># of letters in opponent&apos;s word</span>
+        <h3 className="text-sm font-semibold text-zinc-700 lg:text-lg">{props.title}</h3>
+        <span className="text-sm font-semibold text-zinc-700 lg:text-lg"># of letters in opponent&apos;s word</span>
       </div>
       <div
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="min-h-[5rem] flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(14rem,28dvh)] lg:min-h-0 lg:flex-none"
+        className="min-h-[5rem] flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(22rem,42dvh)] lg:min-h-0 lg:flex-none"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {allGuesses.length === 0 ? (
@@ -820,7 +839,7 @@ function GuessColumn(props: {
           allGuesses.map((guess) => (
             <div
               key={guess.id}
-              className={`guess-row-enter flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-4 lg:py-3 lg:text-base ${"pending" in guess && guess.pending === true ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
+              className={`guess-row-enter flex items-center justify-between gap-2 rounded-lg px-3 py-2 text-sm transition-opacity lg:px-5 lg:py-3.5 lg:text-lg ${"pending" in guess && guess.pending === true ? "bg-zinc-100 opacity-60" : "bg-zinc-50"}`}
             >
               <span className="font-mono font-bold tracking-widest text-zinc-900">
                 {guess.text} {guess.type === "fullWord" && "🎯"}

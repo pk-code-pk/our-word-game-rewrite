@@ -324,7 +324,7 @@ function Content() {
           gamePhase === "playing" && currentGameId ? "hidden lg:block" : ""
         }`}
       >
-        <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
+        <div className="mx-auto flex w-full max-w-6xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
           <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
 
           <div className="ml-auto flex shrink-0 items-center gap-1">
@@ -365,7 +365,7 @@ function Content() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
-        <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+        <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">

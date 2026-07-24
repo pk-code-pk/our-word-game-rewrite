@@ -17,7 +17,7 @@ export function AlphabetBoard({ displayedAlphabet, onToggleLetter, disabled = fa
   const getLetterStyle = (letter: string) => {
     const state = displayedAlphabet[letter] ?? "unknown";
     let base =
-      "flex min-h-11 w-full items-center justify-center rounded border-2 text-[11px] font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-11 lg:text-base lg:rounded-lg";
+      "flex min-h-11 w-full items-center justify-center rounded border-2 text-[11px] font-bold font-mono select-none touch-manipulation transition-[background-color,border-color,transform] duration-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 lg:h-14 lg:text-xl lg:rounded-lg";
 
     if (disabled) {
       base += " cursor-not-allowed opacity-40";
@@ -45,7 +45,7 @@ export function AlphabetBoard({ displayedAlphabet, onToggleLetter, disabled = fa
         <h3 className="text-sm font-semibold text-zinc-900">Alphabet</h3>
       </div>
 
-      <div className="grid grid-cols-7 gap-1 p-2 lg:gap-2 lg:p-4">
+      <div className="grid grid-cols-7 gap-1 p-2 lg:gap-2.5 lg:p-5">
         {ALPHABET.map((letter) => {
           const state = displayedAlphabet[letter] ?? "unknown";
           return (
@@ -85,6 +85,9 @@ export function AlphabetBoard({ displayedAlphabet, onToggleLetter, disabled = fa
         <span className="flex items-center gap-2">
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded border-2 border-rose-600 bg-rose-500 font-mono text-xs font-bold text-white line-through decoration-2" aria-hidden="true">A</span>
           <span>= letter is not in the opponent&apos;s word</span>
+        </span>
+        <span className="text-sm text-zinc-400">
+          Tip: hold <kbd className="rounded border border-zinc-300 bg-zinc-50 px-1.5 py-0.5 font-mono text-xs text-zinc-600">Shift</kbd> and press a letter key to mark it.
         </span>
       </div>
     </div>
