@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
+import { HowToPlay } from "./HowToPlay";
 import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
@@ -484,6 +485,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
                 </p>
               </section>
+              <HowToPlay variant="icon" />
             </div>
 
             {(() => {

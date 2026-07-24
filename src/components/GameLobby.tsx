@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { api } from "../lib/api";
+import { HowToPlay } from "./HowToPlay";
 
 interface GameLobbyProps {
   secretWord: string;
@@ -90,6 +91,10 @@ export function GameLobby({
     <section className="mx-auto max-w-2xl">
       <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
         <div className="space-y-5 px-6 py-6">
+          <div className="flex justify-end">
+            <HowToPlay />
+          </div>
+
           {/* Secret word */}
           <div>
             <label htmlFor="lobby-secret-word" className="mb-1.5 block text-sm font-medium text-zinc-700">
