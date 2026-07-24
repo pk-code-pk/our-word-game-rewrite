@@ -93,7 +93,10 @@ export default function App() {
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
-      <Toaster position="top-center" />
+      {/* Offset below the header so toasts never cover the top bar (screen
+          recording showed match-count toasts painting over it, which read as
+          the header glitching during keyboard transitions). */}
+      <Toaster position="top-center" offset={{ top: 64 }} mobileOffset={{ top: 60 }} duration={2500} />
     </div>
   );
 }
