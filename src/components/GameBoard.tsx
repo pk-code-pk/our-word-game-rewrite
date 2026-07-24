@@ -545,7 +545,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
             <section className="flex min-h-0 flex-1 flex-col lg:block lg:flex-none">
               <GuessColumn
-                title="Your guesses"
+                title="My guesses"
                 elementId="my-guesses"
                 guesses={myGuesses}
                 optimisticGuess={optimisticGuess}
