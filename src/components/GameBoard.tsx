@@ -102,6 +102,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const guessInputRef = useRef<HTMLInputElement | null>(null);
   const myGuessesRef = useRef<HTMLDivElement | null>(null);
   const keepMyGuessesPinnedRef = useRef(true);
+  // Synchronous double-submit lock: pointerdown-submit plus a surviving
+  // click/form-submit can both fire in the same tick, before the async
+  // isSubmitting state has re-rendered.
+  const submitLockRef = useRef(false);
   const latestGameStatusRef = useRef(gameState?.game.status);
 
   const currentPlayer = gameState?.me;
@@ -330,7 +334,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   };
 
   const submitCurrentGuess = async () => {
-    if (!currentPlayer || !guessText.trim() || isSubmitting) return;
+    if (!currentPlayer || !guessText.trim() || isSubmitting || submitLockRef.current) return;
+    submitLockRef.current = true;
+    window.setTimeout(() => {
+      submitLockRef.current = false;
+    }, 400);
 
     const word = guessText.trim().toUpperCase();
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
@@ -664,6 +672,17 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   <button
                     type="submit"
                     disabled={!guessText.trim() || isSubmitting || guessText.length !== guessMaxLength}
+                    // Submit on pointerdown, BEFORE the input blurs. Tapping the
+                    // button while the keyboard is up otherwise fires blur first,
+                    // whose scroll correction moves the button out from under the
+                    // finger before the click lands — the tap goes dead. The
+                    // preventDefault keeps focus (and the page) frozen until the
+                    // submit handler blurs deliberately; the isSubmitting guard
+                    // absorbs the redundant click/submit that may follow.
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      void submitCurrentGuess();
+                    }}
                     className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-lg bg-zinc-900 text-lg font-bold text-white transition hover:bg-zinc-800 active:scale-95 disabled:opacity-40"
                     aria-label="Submit guess"
                   >
