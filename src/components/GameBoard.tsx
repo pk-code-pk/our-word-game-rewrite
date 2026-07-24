@@ -337,8 +337,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     const fallbackTimer = window.setTimeout(correct, 450);
   };
 
-  const handleSubmitGuess = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitCurrentGuess = async () => {
     if (!currentPlayer || !guessText.trim() || isSubmitting) return;
 
     const word = guessText.trim().toUpperCase();
@@ -348,13 +347,16 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    // Short-circuit obvious junk before the server roundtrip. The server still
-    // has its own dictionary check; this just avoids a flicker on misspells.
-    const validate = await loadWordValidator();
-    if (!validate(word, expectedLength)) {
+    // Local dictionary check is BEST-EFFORT: only when the word-list chunk is
+    // already loaded. Awaiting the ~130KB import here made submits randomly
+    // slow (instant when warm, visibly delayed on cold/slow networks). The
+    // server validates regardless, and the catch path below already rolls the
+    // optimistic row back and restores the text on rejection.
+    if (cachedWordValidator && !cachedWordValidator(word, expectedLength)) {
       toast.error("Not a valid word");
       return;
     }
+    void loadWordValidator(); // keep warming for the next guess
 
     // Show the word in the list immediately; fill matchCount/isCorrect from the same
     // API response as the toast (no need to wait for WebSocket gameState).
@@ -630,7 +632,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
             {isGameActive && (
               <form
                 ref={guessFormRef}
-                onSubmit={handleSubmitGuess}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitCurrentGuess();
+                }}
                 className="shrink-0 space-y-2.5 rounded-xl border border-zinc-200 bg-zinc-50 p-3"
               >
                 <div className="flex items-center gap-2">
@@ -649,6 +654,17 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     // the same clean path as the submit button — instead of a
                     // Done-style key that only dismisses the keyboard.
                     enterKeyHint="go"
+                    // Explicit Enter handling: implicit form submission is
+                    // skipped by browsers when the default submit button is
+                    // disabled (e.g. length not yet valid), which made the
+                    // keyboard action key feel dead. Handle the key directly so
+                    // it always takes the same path as the button.
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void submitCurrentGuess();
+                      }
+                    }}
                     className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
                     onBlur={handleGuessInputBlur}
