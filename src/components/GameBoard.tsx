@@ -301,14 +301,32 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       if (stuckOffset <= 40) return;
 
       const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      window.scrollTo({ top: 0, behavior: prefersReduced ? "auto" : "smooth" });
-      window.setTimeout(() => {
-        if (Math.max(vv.offsetTop, window.scrollY) > 1) {
+      if (prefersReduced) {
+        window.scrollTo(0, 0);
+        window.scrollBy(0, -1);
+        window.scrollBy(0, 1);
+        return;
+      }
+
+      // Native smooth scrolling is too fast/harsh here and its speed isn't
+      // tunable, so ease back manually: ~300ms decelerating glide to the top.
+      const startY = window.scrollY;
+      const DURATION_MS = 300;
+      const start = performance.now();
+      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / DURATION_MS);
+        window.scrollTo(0, Math.round(startY * (1 - easeOutCubic(t))));
+        if (t < 1) {
+          window.requestAnimationFrame(step);
+        } else if (Math.max(vv.offsetTop, window.scrollY) > 1) {
+          // Nudge Safari to recompute fixed positioning if a remainder is stuck.
           window.scrollTo(0, 0);
           window.scrollBy(0, -1);
           window.scrollBy(0, 1);
         }
-      }, 450);
+      };
+      window.requestAnimationFrame(step);
     };
     const onViewportResize = () => {
       if (vv.height >= window.innerHeight - 60) {
