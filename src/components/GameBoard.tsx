@@ -422,7 +422,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-            Connection issue — retrying...
+            Connection issue. Retrying...
           </div>
         )}
 

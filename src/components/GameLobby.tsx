@@ -170,9 +170,9 @@ export function GameLobby({
           </div>
 
           <p className="text-center text-xs text-zinc-500">
-            <span className="font-medium text-zinc-600">Find match</span> pairs you with the next player online — you'll wait
-            briefly for an opponent. Use <span className="font-medium text-zinc-600">Invite friend</span> or{" "}
-            <span className="font-medium text-zinc-600">Accept invite</span> to play someone specific.
+            <span className="font-medium text-zinc-600">Find match</span> pairs you with the next player online.{" "}
+            <span className="font-medium text-zinc-600">Invite friend</span> and{" "}
+            <span className="font-medium text-zinc-600">Accept invite</span> are for playing someone specific.
           </p>
         </div>
       </div>

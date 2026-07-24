@@ -17,7 +17,7 @@ export function RecentGamesPanel({ games, onOpenGame }: RecentGamesPanelProps) {
         className="flex w-full items-center justify-between gap-4 rounded-xl border border-zinc-200 bg-white px-4 py-3 shadow-sm transition hover:bg-zinc-50"
       >
         <span className="text-sm font-semibold text-zinc-900">
-          {game.opponentName ? `Resume vs ${game.opponentName}` : "Resume — waiting for opponent"}
+          {game.opponentName ? `Resume vs ${game.opponentName}` : "Resume: waiting for opponent"}
         </span>
         <span className="shrink-0 text-sm font-semibold text-zinc-500">Resume →</span>
       </button>
