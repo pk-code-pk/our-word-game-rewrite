@@ -1,11 +1,47 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { SocialOverlay } from "./social/SocialOverlay";
 
 interface HowToPlayProps {
-  /** Renders as a full "How to play" button when true (lobby), an icon-only "?" otherwise (in-game header). */
+  /** "full" renders a quiet text button (lobby); "icon" a compact ? button (in-game header). */
   variant?: "full" | "icon";
   forceOpen?: boolean;
   onForceOpenConsumed?: () => void;
+}
+
+// Mini letter tiles, styled exactly like the game's alphabet/rearranger tiles,
+// so the rules teach with the same visual vocabulary the board uses.
+function Tile({ tone = "neutral", children }: { tone?: "neutral" | "green" | "red"; children: ReactNode }) {
+  const tones = {
+    neutral: "border-zinc-300 bg-white text-zinc-800",
+    green: "border-emerald-600 bg-emerald-500 text-white",
+    red: "border-rose-600 bg-rose-500 text-white",
+  } as const;
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-flex h-8 w-8 items-center justify-center rounded-md border-2 align-middle font-mono text-sm font-bold ${tones[tone]}`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Word({ word, tone = "neutral" }: { word: string; tone?: "neutral" | "green" | "red" }) {
+  return (
+    <span className="inline-flex gap-1" role="img" aria-label={word}>
+      {word.split("").map((letter, i) => (
+        <Tile key={i} tone={tone}>
+          {letter}
+        </Tile>
+      ))}
+    </span>
+  );
+}
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return (
+    <h3 className="text-[11px] font-semibold uppercase tracking-[0.24em] text-zinc-400">{children}</h3>
+  );
 }
 
 export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: HowToPlayProps) {
@@ -23,9 +59,9 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
         <button
           type="button"
           onClick={() => setOpen(true)}
-          className="inline-flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 active:scale-[0.98]"
+          className="text-sm font-semibold text-zinc-500 underline decoration-zinc-300 underline-offset-4 transition hover:text-zinc-900 hover:decoration-zinc-500"
         >
-          <span aria-hidden="true">❓</span> How to play
+          How to play
         </button>
       ) : (
         <button
@@ -33,7 +69,7 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
           onClick={() => setOpen(true)}
           aria-label="How to play"
           title="How to play"
-          className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900 text-sm font-bold text-white transition hover:bg-zinc-800 active:scale-95"
+          className="inline-flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white font-mono text-sm font-bold text-zinc-600 transition hover:bg-zinc-50 active:scale-[0.96]"
         >
           ?
         </button>
@@ -44,57 +80,66 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
         onClose={close}
         eyebrow="FourFive"
         title="How to play"
-        subtitle="Guess your opponent's secret word before they guess yours."
+        subtitle="Guess your opponent's five-letter word before they guess yours."
         size="md"
       >
-        <div className="space-y-5 text-sm leading-6 text-zinc-700">
-          <section>
-            <h3 className="mb-1.5 text-sm font-bold text-zinc-900">1. Pick a secret word</h3>
-            <p>
-              Choose a real 5-letter word with <span className="font-semibold">no repeated letters</span> (e.g.{" "}
-              <span className="font-mono font-semibold">CRANE</span>, not{" "}
-              <span className="font-mono font-semibold">SASSY</span>). Your opponent picks one too — neither of you sees
-              the other's word until the game ends.
+        <div className="space-y-7">
+          <section className="space-y-2.5">
+            <SectionLabel>The setup</SectionLabel>
+            <p className="text-sm leading-6 text-zinc-600">
+              Both players lock in a real five-letter word — five{" "}
+              <span className="font-semibold text-zinc-900">different</span> letters, no repeats. Words stay hidden
+              until the match ends.
+            </p>
+            <Word word="CRANE" />
+          </section>
+
+          <section className="space-y-2.5">
+            <SectionLabel>Probe with four letters</SectionLabel>
+            <p className="text-sm leading-6 text-zinc-600">
+              A four-letter word is a question. The answer is a single number: how many of its letters appear{" "}
+              <span className="font-semibold text-zinc-900">anywhere</span> in their word. Never which ones, never
+              where.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Word word="PORK" />
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
+                1 letter matches
+              </span>
+            </div>
+            <p className="text-sm leading-6 text-zinc-500">
+              One of P, O, R, K is in their word — narrowing it down is the whole game.
             </p>
           </section>
 
-          <section>
-            <h3 className="mb-1.5 text-sm font-bold text-zinc-900">2. Guess two ways</h3>
-            <div className="space-y-2">
-              <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
-                <p className="font-semibold text-zinc-900">4-letter probe</p>
-                <p className="mt-0.5">
-                  Type any 4-letter word. You'll learn how many of its <span className="font-semibold">distinct
-                  letters</span> appear <span className="font-semibold">anywhere</span> in the opponent's word — not
-                  which ones, and not their position. Use this to narrow things down.
-                </p>
-              </div>
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                <p className="font-semibold text-emerald-800">5-letter final answer</p>
-                <p className="mt-0.5">
-                  Type your full guess for their word. Get it exactly right and you <span className="font-semibold">win
-                  instantly</span>. Wrong, and you get no hint back — so save this for when you're confident.
-                </p>
-              </div>
+          <section className="space-y-2.5">
+            <SectionLabel>Solve with five</SectionLabel>
+            <p className="text-sm leading-6 text-zinc-600">
+              A five-letter guess goes for the win. Exactly right ends the match on the spot. A miss tells you{" "}
+              <span className="font-semibold text-zinc-900">nothing</span> — solve when you're sure, not when you're
+              curious.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <Word word="SLATE" tone="green" />
+              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                Correct — you win
+              </span>
             </div>
           </section>
 
-          <section>
-            <h3 className="mb-1.5 text-sm font-bold text-zinc-900">3. Track your deductions</h3>
-            <p>
-              Tap letters on the alphabet board to mark them{" "}
-              <span className="font-semibold text-emerald-700">green</span> (in the word) or{" "}
-              <span className="font-semibold text-rose-700">red</span> (not in the word) — this is just your personal
-              notepad, it doesn't affect the game. Once you've marked 2 or more green letters, a rearranger appears so
-              you can shuffle them into possible orders.
+          <section className="space-y-2.5">
+            <SectionLabel>Mark your board</SectionLabel>
+            <p className="text-sm leading-6 text-zinc-600">
+              Tap the alphabet to keep notes: <Tile tone="green">A</Tile> means you believe it's in their word,{" "}
+              <Tile tone="red">B</Tile> means ruled out. It's a private notepad — it doesn't affect the game. Mark two
+              or more letters green and a shuffle bar appears to help you rearrange them into candidate words.
             </p>
           </section>
 
-          <section>
-            <h3 className="mb-1.5 text-sm font-bold text-zinc-900">4. First correct guess wins</h3>
-            <p>
-              The first player to correctly guess the opponent's full word wins the match. There's no limit on how many
-              probes either player can send.
+          <section className="space-y-2.5">
+            <SectionLabel>Winning</SectionLabel>
+            <p className="text-sm leading-6 text-zinc-600">
+              First correct solve takes the match. Probes are unlimited — the best players just need fewer of them.
             </p>
           </section>
         </div>
