@@ -271,24 +271,52 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     if (window.innerWidth >= 1024) {
       return;
     }
-    window.setTimeout(() => {
+    const vv = window.visualViewport;
+    if (!vv) {
+      return;
+    }
+
+    // Correct the moment the keyboard finishes dismissing (visual viewport
+    // back to ~full height), not on a blind timer. Firing during the dead
+    // beat after the animation made the correction read as a second, separate
+    // jump. Glide instead of teleport; hard-settle only if the glide didn't
+    // take (some iOS builds ignore smooth scrolls to the window).
+    let done = false;
+    const cleanup = () => {
+      vv.removeEventListener("resize", onViewportResize);
+      window.clearTimeout(fallbackTimer);
+    };
+    const correct = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+
       const active = document.activeElement;
       // Focus moved to another field: keyboard is still up, don't touch.
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) {
-        return;
-      }
-      const vv = window.visualViewport;
-      if (vv && vv.scale !== 1) {
-        return; // never yank a pinch-zoomed viewport
-      }
-      const stuckOffset = Math.max(vv?.offsetTop ?? 0, window.scrollY);
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      if (vv.scale !== 1) return; // never yank a pinch-zoomed viewport
+
       // Only correct a real keyboard-sized leftover gap, not a small legit scroll.
-      if (stuckOffset > 40) {
-        window.scrollTo(0, 0);
-        window.scrollBy(0, -1);
-        window.scrollBy(0, 1);
+      const stuckOffset = Math.max(vv.offsetTop, window.scrollY);
+      if (stuckOffset <= 40) return;
+
+      const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      window.scrollTo({ top: 0, behavior: prefersReduced ? "auto" : "smooth" });
+      window.setTimeout(() => {
+        if (Math.max(vv.offsetTop, window.scrollY) > 1) {
+          window.scrollTo(0, 0);
+          window.scrollBy(0, -1);
+          window.scrollBy(0, 1);
+        }
+      }, 450);
+    };
+    const onViewportResize = () => {
+      if (vv.height >= window.innerHeight - 60) {
+        correct();
       }
-    }, 250);
+    };
+    vv.addEventListener("resize", onViewportResize);
+    const fallbackTimer = window.setTimeout(correct, 450);
   };
 
   const handleSubmitGuess = async (e: React.FormEvent) => {
