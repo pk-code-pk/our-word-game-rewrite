@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import confetti from "canvas-confetti";
 import { toast } from "sonner";
 import { AlphabetBoard } from "./AlphabetBoard";
@@ -42,46 +42,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
-  const [greenLetterOrder, setGreenLetterOrder] = useState<string[] | null>(null);
-  // Set of letters currently shown in the green-letters bar, debounced from
-  // the alphabet's `present` state so a transient pass-through (the cycle is
-  // unknown → present → absent, so marking red flashes through green) doesn't
-  // briefly add the letter to the bar.
-  const [committedGreens, setCommittedGreens] = useState<Set<string>>(new Set());
-  const greenTileRefs = useRef<Map<number, HTMLSpanElement>>(new Map());
-  const flipSnapshotRef = useRef<Map<number, DOMRect> | null>(null);
-
-  const capturePositions = useCallback(() => {
-    const snap = new Map<number, DOMRect>();
-    greenTileRefs.current.forEach((el, charCode) => {
-      snap.set(charCode, el.getBoundingClientRect());
-    });
-    flipSnapshotRef.current = snap;
-  }, []);
-
-  useLayoutEffect(() => {
-    const snapshot = flipSnapshotRef.current;
-    if (!snapshot || snapshot.size === 0) return;
-    flipSnapshotRef.current = null;
-
-    greenTileRefs.current.forEach((el, charCode) => {
-      const first = snapshot.get(charCode);
-      if (!first) return;
-      const last = el.getBoundingClientRect();
-      const dx = first.left - last.left;
-      const dy = first.top - last.top;
-      if (dx === 0 && dy === 0) return;
-
-      el.animate(
-        [
-          { transform: `translate(${dx}px, ${dy - 20}px) scale(1.1)`, offset: 0 },
-          { transform: `translate(${dx * 0.3}px, -12px) scale(1.05)`, offset: 0.4 },
-          { transform: "translate(0, 0) scale(1)", offset: 1 },
-        ],
-        { duration: 750, easing: "cubic-bezier(0.22, 1, 0.36, 1)", fill: "none" }
-      );
-    });
-  }, [greenLetterOrder]);
   const announcedCompletionRef = useRef<string | null>(null);
   const guessFormRef = useRef<HTMLFormElement | null>(null);
   const guessInputRef = useRef<HTMLInputElement | null>(null);
@@ -94,75 +54,14 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const myGuesses = gameState?.myGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
-  // Shared optimistic alphabet — both AlphabetBoard instances and the
-  // green-letters bar read from the same displayedAlphabet so a click
-  // updates everything in the same render (no WS round-trip lag).
+  // Shared optimistic alphabet — both AlphabetBoard instances read from the
+  // same displayedAlphabet so a click updates everything in the same render.
   const alphabetDisabled = gameState?.game.status !== "active";
   const { displayedAlphabet, toggleLetter } = useOptimisticAlphabet(
     gameId,
     currentPlayer?.alphabet,
     alphabetDisabled
   );
-
-  // Debounce additions to the green-letters bar. Because the alphabet cycle
-  // is unknown → present → absent, marking a letter red requires passing
-  // through present. Without the delay the letter pops into the bar for a
-  // few hundred ms then vanishes, which feels noisy. Removals are immediate.
-  const pendingGreenTimersRef = useRef<Map<string, number>>(new Map());
-  useEffect(() => {
-    const GREEN_COMMIT_DELAY_MS = 600;
-    const timers = pendingGreenTimersRef.current;
-
-    setCommittedGreens((prev) => {
-      let next: Set<string> | null = null;
-
-      // Drop committed letters that are no longer present.
-      for (const letter of prev) {
-        if (displayedAlphabet[letter] !== "present") {
-          if (!next) next = new Set(prev);
-          next.delete(letter);
-        }
-      }
-
-      // For each letter that's present but not yet committed and not already
-      // armed: schedule a commit. For each that's not present: cancel any
-      // pending timer.
-      for (const letter of Object.keys(displayedAlphabet)) {
-        const isPresent = displayedAlphabet[letter] === "present";
-        const isCommitted = (next ?? prev).has(letter);
-        const hasTimer = timers.has(letter);
-
-        if (isPresent && !isCommitted && !hasTimer) {
-          const timer = window.setTimeout(() => {
-            timers.delete(letter);
-            setCommittedGreens((current) => {
-              if (current.has(letter)) return current;
-              const updated = new Set(current);
-              updated.add(letter);
-              return updated;
-            });
-          }, GREEN_COMMIT_DELAY_MS);
-          timers.set(letter, timer);
-        } else if (!isPresent && hasTimer) {
-          window.clearTimeout(timers.get(letter)!);
-          timers.delete(letter);
-        }
-      }
-
-      return next ?? prev;
-    });
-  }, [displayedAlphabet]);
-
-  // Clear any in-flight commit timers when the board unmounts.
-  useEffect(() => {
-    const timers = pendingGreenTimersRef.current;
-    return () => {
-      for (const timer of timers.values()) {
-        window.clearTimeout(timer);
-      }
-      timers.clear();
-    };
-  }, []);
 
   // Clear optimistic guess once the real state catches up. A safety timeout
   // also clears it if the server quietly drops/rejects the guess (e.g. invalid
@@ -473,59 +372,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
               </p>
             </section>
-
-            {(() => {
-              const sorted = Array.from(committedGreens)
-                .map((letter) => letter.toUpperCase())
-                .sort();
-              const displayed = greenLetterOrder && greenLetterOrder.length === sorted.length &&
-                [...greenLetterOrder].sort().join("") === sorted.join("")
-                ? greenLetterOrder
-                : sorted;
-              const shuffle = () => {
-                capturePositions();
-                const arr = [...sorted];
-                for (let i = arr.length - 1; i > 0; i--) {
-                  const j = Math.floor(Math.random() * (i + 1));
-                  [arr[i], arr[j]] = [arr[j], arr[i]];
-                }
-                setGreenLetterOrder(arr);
-              };
-              return (
-                <section className="rounded-xl border border-zinc-200 bg-emerald-50 px-4 py-3 lg:px-6 lg:py-4">
-                  {/* min-h reserves the tile-row height so adding the first
-                      letter doesn't bump the layout down. */}
-                  <div className="flex min-h-9 flex-wrap items-center gap-1.5 lg:min-h-12 lg:gap-2.5">
-                    {displayed.map((letter) => (
-                      <span
-                        key={letter}
-                        ref={(el) => {
-                          if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
-                          else greenTileRefs.current.delete(letter.charCodeAt(0));
-                        }}
-                        className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white lg:min-w-[3rem] lg:px-3 lg:py-2 lg:text-xl"
-                      >
-                        {letter}
-                      </span>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={shuffle}
-                      className="ml-1 inline-flex min-h-11 items-center gap-1 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-xs font-semibold text-emerald-700 shadow-sm transition-colors hover:bg-emerald-50 active:bg-emerald-100"
-                    >
-                      Shuffle
-                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
-                        <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.7-1.1 2-1.7 3.3-1.7H20" />
-                        <path d="m18 2 4 4-4 4" />
-                        <path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" />
-                        <path d="M20 18h-3.9c-1.3 0-2.5-.6-3.3-1.7l-.5-.8" />
-                        <path d="m18 14 4 4-4 4" />
-                      </svg>
-                    </button>
-                  </div>
-                </section>
-              );
-            })()}
 
             <section className="flex min-h-0 flex-1 flex-col lg:block lg:flex-none">
               <GuessColumn
