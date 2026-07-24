@@ -258,41 +258,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     };
   }, [currentPlayer?.id, gameId]);
 
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const viewport = window.visualViewport;
-    if (!viewport) {
-      return;
-    }
-
-    // visualViewport "resize" fires continuously on mobile while the keyboard
-    // and URL bar animate. Reacting to every event makes the page scroll-fight
-    // the user (the "it jumps / scrolls up when I tap the input" bug). Instead
-    // we debounce until the viewport settles and only nudge if the composer is
-    // actually hidden behind the keyboard.
-    let settleTimer: number | undefined;
-    const keepComposerVisibleOnViewportChange = () => {
-      if (document.activeElement !== guessInputRef.current) {
-        return;
-      }
-      window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(() => {
-        window.requestAnimationFrame(() => ensureComposerStaysVisible(guessFormRef.current));
-      }, 150);
-    };
-
-    viewport.addEventListener("resize", keepComposerVisibleOnViewportChange);
-    window.addEventListener("orientationchange", keepComposerVisibleOnViewportChange);
-
-    return () => {
-      window.clearTimeout(settleTimer);
-      viewport.removeEventListener("resize", keepComposerVisibleOnViewportChange);
-      window.removeEventListener("orientationchange", keepComposerVisibleOnViewportChange);
-    };
-  }, []);
+  // Mobile keyboard: intentionally hands-off. iOS natively pans the page so
+  // the focused input sits above the keyboard, and every scripted "assist" we
+  // tried (scrollIntoView nudges, viewport listeners) fought that pan and read
+  // as a bounce. Native behavior wins.
 
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -590,7 +559,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     spellCheck={false}
                     className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
-                    onFocus={() => ensureComposerStaysVisible(guessFormRef.current)}
                   />
                   <button
                     type="submit"
@@ -763,20 +731,3 @@ function isNearBottom(element: HTMLDivElement | null, threshold = 28) {
   return element.scrollHeight - element.scrollTop - element.clientHeight <= threshold;
 }
 
-function ensureComposerStaysVisible(element: HTMLElement | null) {
-  if (!element) {
-    return;
-  }
-
-  const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
-  const rect = element.getBoundingClientRect();
-  const bottomSafeArea = 20;
-  // Only nudge when the composer is actually hidden below the keyboard/fold.
-  // We intentionally do NOT react to a small top overlap — doing so caused the
-  // page to scroll up unexpectedly depending on where the input sat.
-  const hiddenBelowKeyboard = rect.bottom > viewportHeight - bottomSafeArea;
-
-  if (hiddenBelowKeyboard) {
-    element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
-  }
-}

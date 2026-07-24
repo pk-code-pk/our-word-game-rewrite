@@ -1,5 +1,5 @@
 import { Toaster } from "sonner";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { GameLobby } from "./components/GameLobby";
@@ -31,79 +31,14 @@ function isRecoverableInviteLobbyError(message: string) {
 export default function App() {
   const { user } = useAuth();
 
-  // Mobile keyboard handling. iOS ignores `interactive-widget=resizes-content`:
-  // when the keyboard opens it does NOT resize the page, it PANS the layout
-  // viewport upward to reveal the focused input, dragging position:fixed
-  // elements with it. The previous version fought that pan by calling
-  // window.scrollTo(0,0) on every visualViewport event DURING the keyboard
-  // animation, which is exactly the "page moves down then shoots back up"
-  // bounce. New strategy: ride the pan instead of fighting it.
-  //   1. While iOS animates, mirror the pan with translateY(vv.offsetTop) and
-  //      track vv.height, via direct style writes (no React re-render, no
-  //      scroll corrections). The shell stays glued to the visible area, so to
-  //      the user nothing appears to move except the keyboard itself.
-  //   2. After the viewport is quiet for 250ms, do ONE silent normalization:
-  //      scroll the window back to 0 and drop the transform in the same frame.
-  //      Both cancel out visually (net screen position is identical), leaving
-  //      clean coordinates for taps/scrolling. Guarded on scale===1 so we never
-  //      fight a pinch-zoom pan.
-  const shellRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    const vv = window.visualViewport;
-    const shell = shellRef.current;
-    if (!vv || !shell) {
-      return;
-    }
-    let settleTimer: number | undefined;
-
-    const followViewport = () => {
-      if (window.innerWidth >= 1024) {
-        shell.style.position = "";
-        shell.style.top = "";
-        shell.style.left = "";
-        shell.style.right = "";
-        shell.style.height = "";
-        shell.style.transform = "";
-        return;
-      }
-
-      shell.style.position = "fixed";
-      shell.style.top = "0px";
-      shell.style.left = "0px";
-      shell.style.right = "0px";
-      shell.style.height = `${vv.height}px`;
-      shell.style.transform = vv.offsetTop > 0 ? `translateY(${vv.offsetTop}px)` : "";
-
-      window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(() => {
-        if (vv.scale === 1 && (window.scrollY !== 0 || vv.offsetTop > 0)) {
-          window.scrollTo(0, 0);
-          shell.style.transform = "";
-          shell.style.height = `${vv.height}px`;
-        }
-      }, 250);
-    };
-
-    followViewport();
-    vv.addEventListener("resize", followViewport);
-    // The keyboard pan fires visualViewport "scroll" (not resize).
-    vv.addEventListener("scroll", followViewport);
-    window.addEventListener("orientationchange", followViewport);
-    window.addEventListener("resize", followViewport);
-    return () => {
-      window.clearTimeout(settleTimer);
-      vv.removeEventListener("resize", followViewport);
-      vv.removeEventListener("scroll", followViewport);
-      window.removeEventListener("orientationchange", followViewport);
-      window.removeEventListener("resize", followViewport);
-    };
-  }, []);
-
+  // Mobile keyboard: we deliberately do NOTHING. iOS pans the page up so the
+  // focused input sits above the keyboard, and pans back on blur. That native
+  // slide is smooth; every JS "correction" we tried (scroll resets, fixed
+  // shells, transform-following) turned it into a visible bounce. The layout
+  // is a plain 100svh column with the composer at the bottom, and the page is
+  // allowed to move while typing.
   return (
-    <div
-      ref={shellRef}
-      className="flex min-h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900"
-    >
+    <div className="flex min-h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
@@ -356,7 +291,7 @@ function Content() {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
+      <main className="flex flex-1 flex-col px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
