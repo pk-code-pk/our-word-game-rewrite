@@ -262,16 +262,27 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
+    // visualViewport "resize" fires continuously on mobile while the keyboard
+    // and URL bar animate. Reacting to every event makes the page scroll-fight
+    // the user (the "it jumps / scrolls up when I tap the input" bug). Instead
+    // we debounce until the viewport settles and only nudge if the composer is
+    // actually hidden behind the keyboard.
+    let settleTimer: number | undefined;
     const keepComposerVisibleOnViewportChange = () => {
-      if (document.activeElement === guessInputRef.current) {
-        ensureComposerStaysVisible(guessFormRef.current);
+      if (document.activeElement !== guessInputRef.current) {
+        return;
       }
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        window.requestAnimationFrame(() => ensureComposerStaysVisible(guessFormRef.current));
+      }, 150);
     };
 
     viewport.addEventListener("resize", keepComposerVisibleOnViewportChange);
     window.addEventListener("orientationchange", keepComposerVisibleOnViewportChange);
 
     return () => {
+      window.clearTimeout(settleTimer);
       viewport.removeEventListener("resize", keepComposerVisibleOnViewportChange);
       window.removeEventListener("orientationchange", keepComposerVisibleOnViewportChange);
     };
@@ -742,11 +753,13 @@ function ensureComposerStaysVisible(element: HTMLElement | null) {
 
   const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
   const rect = element.getBoundingClientRect();
-  const topSafeArea = 16;
   const bottomSafeArea = 20;
-  const isVisible = rect.top >= topSafeArea && rect.bottom <= viewportHeight - bottomSafeArea;
+  // Only nudge when the composer is actually hidden below the keyboard/fold.
+  // We intentionally do NOT react to a small top overlap — doing so caused the
+  // page to scroll up unexpectedly depending on where the input sat.
+  const hiddenBelowKeyboard = rect.bottom > viewportHeight - bottomSafeArea;
 
-  if (!isVisible) {
-    element.scrollIntoView({ block: "nearest", inline: "nearest" });
+  if (hiddenBelowKeyboard) {
+    element.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "auto" });
   }
 }

@@ -13,12 +13,10 @@ body,
   min-height: 100%;
 }
 
-html {
-  scroll-behavior: smooth;
-}
-
 body {
-  min-height: 100dvh;
+  /* svh (small viewport height) stays fixed as the mobile URL bar shows/hides,
+     unlike dvh which recomputes on scroll and makes the page height jump. */
+  min-height: 100svh;
   font-family: "Outfit", ui-sans-serif, system-ui, -apple-system, sans-serif;
   color: #18181b;
   background:
@@ -33,6 +31,19 @@ body {
 
 #root {
   isolation: isolate;
+}
+
+/* Respect users who ask for less motion; also removes animated programmatic
+   scrolls that read as "jumpy" on mobile. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 ::selection {
