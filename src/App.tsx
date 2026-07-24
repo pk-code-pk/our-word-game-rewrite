@@ -1,5 +1,5 @@
 import { Toaster } from "sonner";
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { GameLobby } from "./components/GameLobby";
@@ -31,60 +31,77 @@ function isRecoverableInviteLobbyError(message: string) {
 export default function App() {
   const { user } = useAuth();
 
-  // On mobile, pin the app shell to the visual viewport. iOS Safari ignores
-  // `interactive-widget=resizes-content`, so when the keyboard opens the layout
-  // viewport stays full-height and the browser scrolls the page to the focused
-  // input — the "it jumps / scrolls up when I tap the text box" bug. Locking the
-  // shell to `visualViewport.height` (position:fixed) means there is nothing
-  // off-screen to scroll to: the shell shrinks to the space above the keyboard
-  // and the pinned composer sits right on top of it. Desktop keeps normal flow.
-  const [shellStyle, setShellStyle] = useState<CSSProperties>({});
+  // Mobile keyboard handling. iOS ignores `interactive-widget=resizes-content`:
+  // when the keyboard opens it does NOT resize the page, it PANS the layout
+  // viewport upward to reveal the focused input, dragging position:fixed
+  // elements with it. The previous version fought that pan by calling
+  // window.scrollTo(0,0) on every visualViewport event DURING the keyboard
+  // animation, which is exactly the "page moves down then shoots back up"
+  // bounce. New strategy: ride the pan instead of fighting it.
+  //   1. While iOS animates, mirror the pan with translateY(vv.offsetTop) and
+  //      track vv.height, via direct style writes (no React re-render, no
+  //      scroll corrections). The shell stays glued to the visible area, so to
+  //      the user nothing appears to move except the keyboard itself.
+  //   2. After the viewport is quiet for 250ms, do ONE silent normalization:
+  //      scroll the window back to 0 and drop the transform in the same frame.
+  //      Both cancel out visually (net screen position is identical), leaving
+  //      clean coordinates for taps/scrolling. Guarded on scale===1 so we never
+  //      fight a pinch-zoom pan.
+  const shellRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const vv = window.visualViewport;
-    if (!vv) {
+    const shell = shellRef.current;
+    if (!vv || !shell) {
       return;
     }
-    const apply = () => {
+    let settleTimer: number | undefined;
+
+    const followViewport = () => {
       if (window.innerWidth >= 1024) {
-        setShellStyle({});
+        shell.style.position = "";
+        shell.style.top = "";
+        shell.style.left = "";
+        shell.style.right = "";
+        shell.style.height = "";
+        shell.style.transform = "";
         return;
       }
-      // iOS doesn't resize the layout viewport for the keyboard — it PANS it
-      // upward to reveal the focused input, dragging position:fixed elements
-      // (this shell) out of view. Two-part counter:
-      // 1. Scroll the window back to 0 — once the shell is sized to the visual
-      //    viewport everything (composer included) fits above the keyboard, so
-      //    iOS has no reason to re-pan. Guarded on scale===1 so we never fight
-      //    a pinch-zoom pan.
-      // 2. Pin the shell to vv.offsetTop as a fallback for iOS versions that
-      //    refuse the scroll reset — the shell then rides the visible region.
-      if (vv.scale === 1 && (window.scrollY !== 0 || vv.offsetTop !== 0)) {
-        window.scrollTo(0, 0);
-      }
-      setShellStyle({
-        position: "fixed",
-        top: `${vv.offsetTop}px`,
-        left: 0,
-        right: 0,
-        height: `${vv.height}px`,
-      });
+
+      shell.style.position = "fixed";
+      shell.style.top = "0px";
+      shell.style.left = "0px";
+      shell.style.right = "0px";
+      shell.style.height = `${vv.height}px`;
+      shell.style.transform = vv.offsetTop > 0 ? `translateY(${vv.offsetTop}px)` : "";
+
+      window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        if (vv.scale === 1 && (window.scrollY !== 0 || vv.offsetTop > 0)) {
+          window.scrollTo(0, 0);
+          shell.style.transform = "";
+          shell.style.height = `${vv.height}px`;
+        }
+      }, 250);
     };
-    apply();
-    vv.addEventListener("resize", apply);
-    // The keyboard pan fires visualViewport "scroll" (not resize) — without
-    // this listener the shell never hears about the push-up.
-    vv.addEventListener("scroll", apply);
-    window.addEventListener("orientationchange", apply);
+
+    followViewport();
+    vv.addEventListener("resize", followViewport);
+    // The keyboard pan fires visualViewport "scroll" (not resize).
+    vv.addEventListener("scroll", followViewport);
+    window.addEventListener("orientationchange", followViewport);
+    window.addEventListener("resize", followViewport);
     return () => {
-      vv.removeEventListener("resize", apply);
-      vv.removeEventListener("scroll", apply);
-      window.removeEventListener("orientationchange", apply);
+      window.clearTimeout(settleTimer);
+      vv.removeEventListener("resize", followViewport);
+      vv.removeEventListener("scroll", followViewport);
+      window.removeEventListener("orientationchange", followViewport);
+      window.removeEventListener("resize", followViewport);
     };
   }, []);
 
   return (
     <div
-      style={shellStyle}
+      ref={shellRef}
       className="flex min-h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900"
     >
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
@@ -340,7 +357,7 @@ function Content() {
       </header>
 
       <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
-        <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">

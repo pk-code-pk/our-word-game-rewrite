@@ -418,8 +418,8 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col lg:grid lg:min-h-0 lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
+    <div className="flex flex-1 flex-col lg:grid lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
+      <div className="flex min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
             Connection issue. Retrying...
@@ -465,7 +465,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
 
         {opponent && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3 lg:block lg:space-y-5">
+          <div className="flex flex-1 flex-col gap-3 lg:block lg:space-y-5">
             {/* Status row doubles as the nav row: back button lives inline so it
                 doesn't cost a whole row of vertical space on mobile. */}
             <div className="flex shrink-0 items-center gap-2">
@@ -479,10 +479,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   <path d="m15 18-6-6 6-6" />
                 </svg>
               </button>
-              <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 lg:px-6 lg:py-4">
-                <p className="text-center text-sm font-medium text-zinc-700 lg:text-base">
-                  {opponent.username} has found{" "}
-                  <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters.
+              <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 lg:px-6 lg:py-4">
+                <p className="truncate text-center text-sm font-medium text-zinc-700 lg:text-base">
+                  <span className="font-semibold">{opponent.username}</span> found{" "}
+                  <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters
                 </p>
               </section>
               <HowToPlay variant="icon" />
@@ -545,7 +545,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               );
             })()}
 
-            <section className="flex min-h-0 flex-1 flex-col lg:block lg:flex-none">
+            <section className="flex flex-1 flex-col lg:block lg:flex-none">
               <GuessColumn
                 title="My guesses"
                 elementId="my-guesses"
@@ -693,8 +693,8 @@ function GuessColumn(props: {
       : props.guesses;
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:flex-none lg:p-5">
-      <div className="mb-3 flex items-center justify-between">
+    <div className="flex min-h-[7.5rem] min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white p-3 shadow-sm lg:min-h-0 lg:flex-none lg:p-5">
+      <div className="mb-2 flex items-center justify-between">
         <h3 className="text-sm font-semibold text-zinc-700 lg:text-base">{props.title}</h3>
         <span className="text-sm font-semibold text-zinc-700 lg:text-base"># of letters in opponent&apos;s word</span>
       </div>
@@ -702,7 +702,7 @@ function GuessColumn(props: {
         ref={props.scrollRef}
         id={props.elementId}
         onScroll={props.onScroll}
-        className="min-h-[5.5rem] flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(14rem,28dvh)] lg:min-h-0 lg:flex-none"
+        className="min-h-[5rem] flex-1 space-y-2 overflow-y-scroll overscroll-y-contain pr-1 lg:h-[min(14rem,28dvh)] lg:min-h-0 lg:flex-none"
         style={{ scrollbarGutter: "stable both-edges", overflowAnchor: "none" }}
       >
         {allGuesses.length === 0 ? (
