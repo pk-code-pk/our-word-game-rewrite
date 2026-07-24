@@ -337,7 +337,7 @@ export const db: DatabaseLike & {
 
 function buildUsernameSeed(email: string | null, isAnonymous: boolean, userId: string) {
   const emailSeed = email?.split("@")[0] ?? "";
-  const anonymousSeed = isAnonymous ? `anon-${userId.slice(0, 8)}` : "player";
+  const anonymousSeed = isAnonymous ? `guest-${userId.slice(0, 4)}` : "player";
   const normalized = sanitizeSocialUsername(emailSeed || anonymousSeed);
   return normalized.length >= 2 ? normalized : sanitizeSocialUsername(anonymousSeed) || "player";
 }

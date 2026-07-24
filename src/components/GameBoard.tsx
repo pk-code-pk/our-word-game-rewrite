@@ -534,8 +534,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               </button>
               <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 lg:px-6 lg:py-4">
                 <p className="truncate text-center text-sm font-medium text-zinc-700 lg:text-base">
-                  <span className="font-semibold">{opponent.username}</span> found{" "}
-                  <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span> of your letters
+                  <span className="font-semibold">{opponent.username}</span>
+                  <span className="mx-1.5 text-zinc-400">·</span>
+                  <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span>
+                  <span className="text-zinc-500">/5</span> letters found
                 </p>
               </section>
               <HowToPlay variant="icon" />

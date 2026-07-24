@@ -431,7 +431,9 @@ export function upgradeAnonymousAccount(
 export function signInAnonymously(): MaybePromise<string> {
   const userId = uuid();
   return flatMapMaybePromise(
-    allocateUniqueUsernameRemote(`anon-${crypto.randomBytes(4).toString("hex")}`),
+    // Short guest handle: 4 hex chars is 65k combos, and the unique-username
+    // allocator appends a suffix on collision anyway.
+    allocateUniqueUsernameRemote(`guest-${crypto.randomBytes(2).toString("hex")}`),
     (username) =>
       flatMapMaybePromise(
         db
