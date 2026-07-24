@@ -389,14 +389,25 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
           : row
       );
-      if (result.isCorrect) {
-        toast.success("You guessed it!");
-      } else if (guessType === "fullWord") {
-        toast("Not the word.");
+      // On mobile the toast otherwise enters during the keyboard-dismiss
+      // animation — enter transition + keyboard slide + viewport restore all
+      // compete for the same frames and the toast looks choppy. Let the
+      // keyboard finish first; desktop shows it immediately.
+      const showResultToast = () => {
+        if (result.isCorrect) {
+          toast.success("You guessed it!");
+        } else if (guessType === "fullWord") {
+          toast("Not the word.");
+        } else {
+          toast(
+            `${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
+          );
+        }
+      };
+      if (window.innerWidth < 1024) {
+        window.setTimeout(showResultToast, 450);
       } else {
-        toast(
-          `${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
-        );
+        showResultToast();
       }
     } catch (error) {
       setOptimisticGuess(null);
