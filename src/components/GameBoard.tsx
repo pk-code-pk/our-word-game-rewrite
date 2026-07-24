@@ -455,7 +455,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const queryError = gameStateQuery.error;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col lg:grid lg:min-h-fit lg:flex-none lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5">
+    <div
+      className={`flex min-h-0 flex-1 flex-col lg:min-h-fit lg:flex-none ${
+        gameState.game.status === "completed"
+          ? "lg:mx-auto lg:w-full lg:max-w-2xl"
+          : "lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-5"
+      }`}
+    >
       <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3 rounded-xl border border-zinc-200 bg-white px-3 pb-3 pt-2 sm:px-4 sm:pb-4 sm:pt-2 lg:block lg:min-h-fit lg:flex-none lg:space-y-5 lg:px-6 lg:pb-6 lg:pt-4">
         {queryError && (
           <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
@@ -481,27 +487,67 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         )}
 
         {opponent && gameState.game.status === "completed" && (
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
-              <h3 className="text-center text-sm font-semibold text-zinc-700">
-                Your secret word {currentPlayer.id === gameState.game.winnerId && "🎉"}
-              </h3>
-              <p className="mt-4 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
-                {currentPlayer.secretWord}
-              </p>
+          <div className="flex flex-1 flex-col justify-center gap-4 py-4">
+            {(() => {
+              const didWin = currentPlayer.id === gameState.game.winnerId;
+              const abandoned = !gameState.game.winnerId;
+              return (
+                <div
+                  className={`rounded-xl border px-5 py-6 text-center ${
+                    abandoned
+                      ? "border-zinc-200 bg-zinc-50"
+                      : didWin
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-rose-200 bg-rose-50"
+                  }`}
+                >
+                  <p
+                    className={`font-display text-2xl font-black tracking-tight ${
+                      abandoned ? "text-zinc-700" : didWin ? "text-emerald-800" : "text-rose-800"
+                    }`}
+                  >
+                    {abandoned ? "Game over" : didWin ? "You won! 🎉" : `${opponent.username} won`}
+                  </p>
+                  <p className="mt-1.5 text-sm text-zinc-600">
+                    {abandoned
+                      ? "This game ended without a winner."
+                      : didWin
+                      ? `You cracked ${opponent.username}'s word in ${myGuesses.length} guess${myGuesses.length === 1 ? "" : "es"}.`
+                      : `${opponent.username} got your word first.`}
+                  </p>
+                </div>
+              );
+            })()}
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                <h3 className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  Your word
+                </h3>
+                <p className="mt-2 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
+                  {currentPlayer.secretWord}
+                </p>
+              </div>
+              <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4">
+                <h3 className="text-center text-xs font-semibold uppercase tracking-[0.14em] text-zinc-500">
+                  {opponent.username}'s word
+                </h3>
+                <p className="mt-2 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
+                  {opponent.secretWord}
+                </p>
+              </div>
             </div>
-            <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-4 shadow-sm">
-              <h3 className="text-center text-sm font-semibold text-zinc-700">
-                {opponent.username}'s secret word {opponent.id === gameState.game.winnerId && "🎉"}
-              </h3>
-              <p className="mt-4 text-center font-mono text-3xl font-black tracking-widest text-zinc-900">
-                {opponent.secretWord}
-              </p>
-            </div>
+
+            <button
+              onClick={onExitToMenu}
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-5 font-semibold text-white transition hover:bg-emerald-700 active:scale-[0.98]"
+            >
+              Play again
+            </button>
           </div>
         )}
 
-        {opponent && (
+        {opponent && gameState.game.status !== "completed" && (
           <div className="flex min-h-0 flex-1 flex-col gap-3 lg:block lg:min-h-fit lg:space-y-5">
             {/* Status row doubles as the nav row: back button lives inline so it
                 doesn't cost a whole row of vertical space on mobile. */}
@@ -705,25 +751,17 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
           </div>
         )}
 
-        {gameState.game.status === "completed" && (
-          <div className="flex justify-center">
-            <button
-              onClick={onExitToMenu}
-              className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-600 px-5 py-2.5 font-semibold text-white transition hover:bg-emerald-700 sm:w-auto"
-            >
-              Play again
-            </button>
-          </div>
-        )}
       </div>
 
-      <div className="min-w-0 lg:sticky lg:top-16 lg:self-start hidden lg:block">
-        <AlphabetBoard
-                displayedAlphabet={displayedAlphabet}
-                onToggleLetter={toggleLetter}
-                disabled={!isGameActive}
-              />
-      </div>
+      {gameState.game.status !== "completed" && (
+        <div className="min-w-0 lg:sticky lg:top-16 lg:self-start hidden lg:block">
+          <AlphabetBoard
+            displayedAlphabet={displayedAlphabet}
+            onToggleLetter={toggleLetter}
+            disabled={!isGameActive}
+          />
+        </div>
+      )}
     </div>
   );
 }
