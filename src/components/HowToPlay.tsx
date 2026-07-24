@@ -85,61 +85,42 @@ export function HowToPlay({ variant = "full", forceOpen, onForceOpenConsumed }: 
       >
         <div className="space-y-7">
           <section className="space-y-2.5">
-            <SectionLabel>The setup</SectionLabel>
+            <SectionLabel>Your word</SectionLabel>
             <p className="text-sm leading-6 text-zinc-600">
-              Both players lock in a real five-letter word — five{" "}
-              <span className="font-semibold text-zinc-900">different</span> letters, no repeats. Words stay hidden
-              until the match ends.
+              Both players pick a real five-letter word — no repeated letters.
             </p>
             <Word word="CRANE" />
           </section>
 
-          <section className="space-y-2.5">
-            <SectionLabel>Probe with four letters</SectionLabel>
-            <p className="text-sm leading-6 text-zinc-600">
-              A four-letter word is a question. The answer is a single number: how many of its letters appear{" "}
-              <span className="font-semibold text-zinc-900">anywhere</span> in their word. Never which ones, never
-              where.
-            </p>
+          <section className="space-y-3">
+            <SectionLabel>Two kinds of guess</SectionLabel>
             <div className="flex flex-wrap items-center gap-3">
               <Word word="PORK" />
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-semibold text-zinc-700">
                 1 letter matches
               </span>
             </div>
-            <p className="text-sm leading-6 text-zinc-500">
-              One of P, O, R, K is in their word — narrowing it down is the whole game.
-            </p>
-          </section>
-
-          <section className="space-y-2.5">
-            <SectionLabel>Solve with five</SectionLabel>
             <p className="text-sm leading-6 text-zinc-600">
-              A five-letter guess goes for the win. Exactly right ends the match on the spot. A miss tells you{" "}
-              <span className="font-semibold text-zinc-900">nothing</span> — solve when you're sure, not when you're
-              curious.
+              <span className="font-semibold text-zinc-900">4 letters = a clue.</span> The number says how many of
+              those letters are in their word — not which, not where.
             </p>
-            <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 pt-1">
               <Word word="SLATE" tone="green" />
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
                 Correct — you win
               </span>
             </div>
-          </section>
-
-          <section className="space-y-2.5">
-            <SectionLabel>Mark your board</SectionLabel>
             <p className="text-sm leading-6 text-zinc-600">
-              Tap the alphabet to keep notes: <Tile tone="green">A</Tile> means you believe it's in their word,{" "}
-              <Tile tone="red">B</Tile> means ruled out. It's a private notepad — it doesn't affect the game. Mark two
-              or more letters green and a shuffle bar appears to help you rearrange them into candidate words.
+              <span className="font-semibold text-zinc-900">5 letters = going for the win.</span> Right: instant win.
+              Wrong: no clue back.
             </p>
           </section>
 
           <section className="space-y-2.5">
-            <SectionLabel>Winning</SectionLabel>
+            <SectionLabel>Your notepad</SectionLabel>
             <p className="text-sm leading-6 text-zinc-600">
-              First correct solve takes the match. Probes are unlimited — the best players just need fewer of them.
+              Tap the alphabet to track what you know: <Tile tone="green">A</Tile> in their word,{" "}
+              <Tile tone="red">B</Tile> ruled out. Just notes — the game doesn't check them.
             </p>
           </section>
         </div>
