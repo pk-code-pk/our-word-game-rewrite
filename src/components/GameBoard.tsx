@@ -411,7 +411,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       }
     } catch (error) {
       setOptimisticGuess(null);
-      setGuessText(word);
+      // Restore the failed word for a retry, but never clobber a next guess
+      // the player already started typing during the round-trip.
+      setGuessText((current) => (current === "" ? word : current));
       toast.error(error instanceof Error ? error.message : "Failed to submit guess");
     } finally {
       setIsSubmitting(false);
@@ -727,8 +729,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                         void submitCurrentGuess();
                       }
                     }}
-                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest lg:py-3 lg:text-xl text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
-                    disabled={isSubmitting}
+                    // Deliberately NOT disabled while a guess is in flight:
+                    // disabling a focused element ejects keyboard focus, which
+                    // kicked desktop players out of the box on every submit.
+                    // The submit lock already prevents double-sends, and typing
+                    // the next guess during the round-trip is a feature.
+                    className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest lg:py-3 lg:text-xl text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                     onBlur={handleGuessInputBlur}
                   />
                   <button
