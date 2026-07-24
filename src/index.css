@@ -33,24 +33,6 @@ body {
   isolation: isolate;
 }
 
-/* Mobile: lock the document entirely (app-like). With the body fixed and
-   unscrollable, iOS keyboard interactions can never leave the page scrolled
-   or expose the background below the document — the shell (bound to the
-   visual viewport from App.tsx) is the only thing on screen. */
-@media (max-width: 1023.98px) {
-  html,
-  body {
-    height: 100%;
-    overflow: hidden;
-    overscroll-behavior: none;
-  }
-  body {
-    position: fixed;
-    inset: 0;
-    width: 100%;
-  }
-}
-
 /* New guess rows slide in instead of popping. Reduced-motion users get an
    instant appearance via the global media-query reset below. */
 @keyframes guess-enter {
