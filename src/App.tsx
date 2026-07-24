@@ -311,11 +311,19 @@ function Content() {
 
   return (
     <SocialDataProvider>
-      {/* Sticky only on desktop, where the page actually scrolls. On mobile the
-          shell is a fixed one-screen column, so sticky buys nothing — and iOS
-          recomputes sticky positioning during keyboard scroll churn, which made
-          the header flicker in and out on dismissal. */}
-      <header className="z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur lg:sticky lg:top-0">
+      {/* Hidden during active games on mobile: frame-by-frame recordings show
+          iOS's keyboard pan misaligning the top edge for a few frames per
+          transition, and this near-black bar against the cream page is what
+          made every transition read as a violent flash. The game screen has
+          its own top row (back/status/help); social panels stay mounted and
+          their overlays portal to <body>, so nothing breaks. Desktop and the
+          lobby keep the header. Sticky only on desktop, where the page
+          actually scrolls. */}
+      <header
+        className={`z-20 border-b border-zinc-800/90 bg-zinc-950/95 text-white backdrop-blur lg:sticky lg:top-0 ${
+          gamePhase === "playing" && currentGameId ? "hidden lg:block" : ""
+        }`}
+      >
         <div className="mx-auto flex w-full max-w-5xl items-center gap-2 px-3 py-2.5 sm:px-4 md:px-6">
           <h1 className="shrink-0 font-display text-base font-bold tracking-tight text-white sm:text-xl">FourFive</h1>
 
