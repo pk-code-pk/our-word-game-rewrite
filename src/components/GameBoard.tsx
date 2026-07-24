@@ -362,7 +362,17 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     setGuessText("");
     keepMyGuessesPinnedRef.current = true;
     window.requestAnimationFrame(() => {
-      guessInputRef.current?.focus({ preventScroll: true });
+      if (window.innerWidth < 1024) {
+        // Mobile: dismiss the keyboard after a guess. Re-focusing here made iOS
+        // pan the page again on every submit (preventScroll is not honored),
+        // compounding the shift the user saw as "shoots up too high". And the
+        // next action after a guess is reading the result and marking letters
+        // on the alphabet, which the keyboard was covering anyway.
+        guessInputRef.current?.blur();
+      } else {
+        // Desktop: keep focus so the next guess can be typed immediately.
+        guessInputRef.current?.focus({ preventScroll: true });
+      }
     });
 
     setIsSubmitting(true);
