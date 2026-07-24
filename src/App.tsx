@@ -1,5 +1,5 @@
 import { Toaster } from "sonner";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { GameLobby } from "./components/GameLobby";
@@ -32,7 +32,10 @@ export default function App() {
   const { user } = useAuth();
 
   return (
-    <div className="min-h-[100svh] overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900">
+    <div
+      style={shellStyle}
+      className="flex min-h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900"
+    >
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
@@ -58,6 +61,35 @@ function Content() {
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
   const [openInbox, setOpenInbox] = useState(false);
   const [openGuestInvites, setOpenGuestInvites] = useState(false);
+
+  // On mobile, pin the app shell to the visual viewport. iOS Safari ignores
+  // `interactive-widget=resizes-content`, so when the keyboard opens the layout
+  // viewport stays full-height and the browser scrolls the page to the focused
+  // input — the "it jumps / scrolls up when I tap the text box" bug. Locking the
+  // shell to `visualViewport.height` (position:fixed) means there is nothing
+  // off-screen to scroll to: the shell shrinks to the space above the keyboard
+  // and the pinned composer sits right on top of it. Desktop keeps normal flow.
+  const [shellStyle, setShellStyle] = useState<CSSProperties>({});
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) {
+      return;
+    }
+    const apply = () => {
+      setShellStyle(
+        window.innerWidth >= 1024
+          ? {}
+          : { position: "fixed", top: 0, left: 0, right: 0, height: `${vv.height}px` }
+      );
+    };
+    apply();
+    vv.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    return () => {
+      vv.removeEventListener("resize", apply);
+      window.removeEventListener("orientationchange", apply);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
@@ -285,8 +317,8 @@ function Content() {
         </div>
       </header>
 
-      <main className="flex-1 px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
-        <div className="mx-auto w-full max-w-5xl">
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
+        <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">
