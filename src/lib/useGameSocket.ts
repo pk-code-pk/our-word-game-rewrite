@@ -67,6 +67,9 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
   const dataRef = useRef<GameSocketResponse | undefined>(undefined);
   const gameIdRef = useRef<string | null>(gameId);
   gameIdRef.current = gameId;
+  // Always points at the current effect's fetchState so submitGuess can force
+  // an immediate refetch outside the effect closure.
+  const refetchRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     dataRef.current = undefined;
@@ -136,8 +139,22 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       void fetchState();
     };
 
+    refetchRef.current = () => {
+      if (!cancelled) void fetchState();
+    };
+
     // Initial load from the source of truth.
     void fetchState();
+
+    // Coming back to the tab: mobile Safari freezes timers and drops the
+    // Realtime socket while backgrounded, so returning players could sit on
+    // stale state (e.g. an already-finished game) until the slow poll fired.
+    const onVisible = () => {
+      if (!cancelled && document.visibilityState === "visible") {
+        void fetchState();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
 
     const client = getSupabaseClient();
     const channel = client
@@ -162,6 +179,8 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
 
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+      refetchRef.current = () => {};
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
@@ -179,9 +198,14 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     if (!currentGameId) {
       throw new Error("No active game.");
     }
-    // Guesses always POST to the HTTP endpoint; the resulting mutation triggers
-    // a server-side broadcast that refetches state for both players.
-    return api.submitGuess(currentGameId, payload);
+    // Guesses POST to the HTTP endpoint; the server broadcasts a signal that
+    // refetches state for BOTH players. But don't rely on the broadcast for
+    // the submitter: if their Realtime socket is degraded (backgrounded tab),
+    // a winning guess would leave them staring at an active board until the
+    // slow safety poll. Refetch immediately with the response in hand.
+    const result = await api.submitGuess(currentGameId, payload);
+    refetchRef.current();
+    return result;
   }, []);
 
   return { data, error, loading, connected, submitGuess };
