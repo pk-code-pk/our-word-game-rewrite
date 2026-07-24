@@ -1,5 +1,5 @@
 import { Toaster } from "sonner";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { FriendView } from "../shared/types";
 import { GameLobby } from "./components/GameLobby";
@@ -31,14 +31,47 @@ function isRecoverableInviteLobbyError(message: string) {
 export default function App() {
   const { user } = useAuth();
 
-  // Mobile keyboard: we deliberately do NOTHING. iOS pans the page up so the
-  // focused input sits above the keyboard, and pans back on blur. That native
-  // slide is smooth; every JS "correction" we tried (scroll resets, fixed
-  // shells, transform-following) turned it into a visible bounce. The layout
-  // is a plain 100svh column with the composer at the bottom, and the page is
-  // allowed to move while typing.
+  // Mobile keyboard architecture: the document is locked (index.css pins the
+  // body position:fixed and unscrollable below lg), and this shell is BOUND to
+  // the visual viewport — height and translateY track it on every vv event via
+  // direct style writes. No scroll corrections, no timers, no glides: those
+  // are what produced every bounce so far. If iOS pans for the keyboard, the
+  // shell rides the pan in the same frame; if iOS 26's stuck-offsetTop bug
+  // leaves the pan un-reset after dismissal, the shell still covers exactly
+  // the visible region, so the "tan gap below the composer" cannot appear.
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    const shell = shellRef.current;
+    if (!vv || !shell) {
+      return;
+    }
+    const bind = () => {
+      if (window.innerWidth >= 1024) {
+        shell.style.height = "";
+        shell.style.transform = "";
+        return;
+      }
+      shell.style.height = `${vv.height}px`;
+      shell.style.transform = vv.offsetTop !== 0 ? `translateY(${vv.offsetTop}px)` : "";
+    };
+    bind();
+    vv.addEventListener("resize", bind);
+    vv.addEventListener("scroll", bind);
+    window.addEventListener("orientationchange", bind);
+    window.addEventListener("resize", bind);
+    return () => {
+      vv.removeEventListener("resize", bind);
+      vv.removeEventListener("scroll", bind);
+      window.removeEventListener("orientationchange", bind);
+      window.removeEventListener("resize", bind);
+    };
+  }, []);
+
   return (
-    <div className="flex h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900 lg:h-auto lg:min-h-[100svh]">
+    <div
+      ref={shellRef}
+      className="flex h-[100svh] flex-col overflow-x-clip bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.96),_rgba(242,240,235,0.86)_35%,_rgba(236,232,223,1)_100%)] text-zinc-900 will-change-transform lg:h-auto lg:min-h-[100svh] lg:will-change-auto">
       <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
         <Content key={user?.id ?? "anonymous"} />
       </ScreenErrorBoundary>
@@ -291,7 +324,11 @@ function Content() {
         </div>
       </header>
 
-      <main className="flex min-h-0 flex-1 flex-col px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
+      {/* overflow-y-auto: with the body locked on mobile, main is the internal
+          scroller for states taller than the shell (completed screen, lobby on
+          short phones). The active-game column is height-constrained and won't
+          scroll here. */}
+      <main className="flex min-h-0 flex-1 flex-col overflow-y-auto px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:overflow-visible lg:px-8 lg:pb-8 lg:pt-4">
         <div className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col">
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (

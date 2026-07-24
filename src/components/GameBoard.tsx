@@ -258,84 +258,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     };
   }, [currentPlayer?.id, gameId]);
 
-  // Mobile keyboard: hands-off while it's OPEN (iOS's native pan is the smooth
-  // path; scripted corrections during the animation read as a bounce). But iOS
-  // has a known bug (widely reported against iOS 26 Safari/WebView: Apple
-  // forums threads 800154/800125) where CLOSING the keyboard fails to reset
-  // the viewport pan, leaving the page stuck scrolled up with a blank gap
-  // under the composer. Community-consensus fix: correct ONCE at the
-  // keyboard-dismiss boundary (focusout), after the dismiss animation, with a
-  // scroll reset plus a 1px scroll nudge that forces Safari to recompute
-  // fixed/layout positioning.
-  const handleGuessInputBlur = () => {
-    if (window.innerWidth >= 1024) {
-      return;
-    }
-    const vv = window.visualViewport;
-    if (!vv) {
-      return;
-    }
-
-    // Correct the moment the keyboard finishes dismissing (visual viewport
-    // back to ~full height), not on a blind timer. Firing during the dead
-    // beat after the animation made the correction read as a second, separate
-    // jump. Glide instead of teleport; hard-settle only if the glide didn't
-    // take (some iOS builds ignore smooth scrolls to the window).
-    let done = false;
-    const cleanup = () => {
-      vv.removeEventListener("resize", onViewportResize);
-      window.clearTimeout(fallbackTimer);
-    };
-    const correct = () => {
-      if (done) return;
-      done = true;
-      cleanup();
-
-      const active = document.activeElement;
-      // Focus moved to another field: keyboard is still up, don't touch.
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
-      if (vv.scale !== 1) return; // never yank a pinch-zoomed viewport
-
-      // Only correct a real keyboard-sized leftover gap, not a small legit scroll.
-      const stuckOffset = Math.max(vv.offsetTop, window.scrollY);
-      if (stuckOffset <= 40) return;
-
-      const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      if (prefersReduced) {
-        window.scrollTo(0, 0);
-        window.scrollBy(0, -1);
-        window.scrollBy(0, 1);
-        return;
-      }
-
-      // Native smooth scrolling is too fast/harsh here and its speed isn't
-      // tunable, so ease back manually: ~300ms decelerating glide to the top.
-      const startY = window.scrollY;
-      const DURATION_MS = 300;
-      const start = performance.now();
-      const easeOutCubic = (t: number) => 1 - Math.pow(1 - t, 3);
-      const step = (now: number) => {
-        const t = Math.min(1, (now - start) / DURATION_MS);
-        window.scrollTo(0, Math.round(startY * (1 - easeOutCubic(t))));
-        if (t < 1) {
-          window.requestAnimationFrame(step);
-        } else if (Math.max(vv.offsetTop, window.scrollY) > 1) {
-          // Nudge Safari to recompute fixed positioning if a remainder is stuck.
-          window.scrollTo(0, 0);
-          window.scrollBy(0, -1);
-          window.scrollBy(0, 1);
-        }
-      };
-      window.requestAnimationFrame(step);
-    };
-    const onViewportResize = () => {
-      if (vv.height >= window.innerHeight - 60) {
-        correct();
-      }
-    };
-    vv.addEventListener("resize", onViewportResize);
-    const fallbackTimer = window.setTimeout(correct, 450);
-  };
+  // Mobile keyboard: no scroll corrections anywhere. The document is locked
+  // (body position:fixed, index.css) and the app shell is bound to the visual
+  // viewport in App.tsx, so keyboard pans can't scroll the page or expose a
+  // gap. Every scripted correction we tried before this architecture (scroll
+  // resets, glides, nudges) read as a bounce.
 
   const handleSubmitGuess = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -648,7 +575,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     spellCheck={false}
                     className="min-w-0 flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-2.5 font-mono text-[16px] tracking-widest text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-zinc-50"
                     disabled={isSubmitting}
-                    onBlur={handleGuessInputBlur}
                   />
                   <button
                     type="submit"
