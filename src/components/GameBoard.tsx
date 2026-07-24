@@ -129,6 +129,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   // text fields like chat or social search.
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
+      // Desktop-only: on mobile the on-screen keyboard can emit shifted keys
+      // (auto-caps etc.) and there's a tappable alphabet right there anyway.
+      if (window.innerWidth < 1024) return;
       if (!e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
       if (!/^[a-zA-Z]$/.test(e.key)) return;
       const active = document.activeElement;
