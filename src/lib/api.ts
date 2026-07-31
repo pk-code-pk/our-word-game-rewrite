@@ -262,6 +262,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  createBotGame: (payload: { username: string; secretWord: string; difficulty: "easy" | "medium" | "hard" }) =>
+    request<{ gameId: string; code: string; botName: string }>("/api/games/bot", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
   getGameState: async (gameId: string) =>
     normalizeGameStateResponse(await request<LegacyGameStateResponse>(`/api/games/${gameId}`)),
   submitGuess: (gameId: string, payload: { type: "fourLetter" | "fullWord"; text: string }) =>

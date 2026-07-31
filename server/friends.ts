@@ -128,7 +128,7 @@ async function getUserById(userId: string) {
 async function getUserByIdFrom(runner: DbRunner, userId: string) {
   return (await runner
     .prepare(
-      `SELECT users.id, users.email, users.username, users.is_anonymous, users.created_at
+      `SELECT users.id, users.email, users.username, users.is_anonymous, users.is_bot, users.created_at
        FROM users
        WHERE users.id = ?`
     )
@@ -141,7 +141,7 @@ async function getUserByUsername(username: string) {
 
 async function getUserByUsernameFrom(runner: DbRunner, username: string) {
   return (await runner
-    .prepare(`SELECT id, email, username, is_anonymous, created_at FROM users WHERE LOWER(username) = LOWER(?)`)
+    .prepare(`SELECT id, email, username, is_anonymous, is_bot, created_at FROM users WHERE LOWER(username) = LOWER(?)`)
     .get(username.trim())) as UserRow | undefined;
 }
 
@@ -155,12 +155,23 @@ async function getUserByIdentifierFrom(runner: DbRunner, identifier: string) {
     throw new Error("Choose a player to add.");
   }
 
-  const byId = await getUserByIdFrom(runner, trimmed);
+  // Bot accounts are real users rows so the players table can foreign-key to
+  // them, but nothing is behind them to accept anything. Without this, a
+  // friend request to a bot succeeds and then sits pending forever. Reported
+  // as "not found" rather than "that's a bot" so the accounts stay invisible.
+  const rejectBot = (row: UserRow | undefined) => {
+    if (row && Number((row as UserRow & { is_bot?: number }).is_bot ?? 0) === 1) {
+      throw new Error("We couldn't find that player.");
+    }
+    return row;
+  };
+
+  const byId = rejectBot(await getUserByIdFrom(runner, trimmed));
   if (byId) {
     return byId;
   }
 
-  const byUsername = await getUserByUsernameFrom(runner, trimmed);
+  const byUsername = rejectBot(await getUserByUsernameFrom(runner, trimmed));
   if (byUsername) {
     return byUsername;
   }
@@ -456,6 +467,7 @@ export async function searchUsers(user: AuthUser, queryInput: string): Promise<S
        FROM users
        WHERE users.id != ?
          AND users.is_anonymous = 0
+         AND users.is_bot = 0
          AND (
            LOWER(users.username) LIKE LOWER(?) ESCAPE '\\'
            OR LOWER(users.email) LIKE LOWER(?) ESCAPE '\\'

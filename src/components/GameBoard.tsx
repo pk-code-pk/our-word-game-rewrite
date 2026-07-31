@@ -7,6 +7,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
 import { useOptimisticAlphabet } from "../lib/useOptimisticAlphabet";
+import { GUESS_COOLDOWN_MS } from "../../shared/gameLogic";
 
 // Lazy-loaded so the ~130 KB word list doesn't enter the initial bundle.
 // First guess submission pays the import cost; subsequent ones hit the cache.
@@ -18,6 +19,10 @@ async function loadWordValidator() {
   }
   return cachedWordValidator;
 }
+
+// Extra hold on top of the server cooldown to absorb request latency, so the
+// client never permits a guess the server will reject for pacing.
+const SUBMIT_LOCK_MARGIN_MS = 150;
 
 interface GameBoardProps {
   gameId: string;
@@ -341,9 +346,18 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const submitCurrentGuess = async () => {
     if (!currentPlayer || !guessText.trim() || isSubmitting || submitLockRef.current) return;
     submitLockRef.current = true;
+    // Hold the lock for the server's own cooldown, imported rather than
+    // hardcoded. When this was a local 400ms it was shorter than the server's
+    // window, so a second guess inside the gap was accepted by the UI and then
+    // always rejected — which the player saw as the guess disappearing.
+    //
+    // The margin keeps the client strictly the stricter of the two. The server
+    // measures its cooldown from when it *recorded* the previous guess, which
+    // is later than when we sent it by however long the round trip took, so an
+    // exactly-at-cooldown submit can still land inside the server's window.
     window.setTimeout(() => {
       submitLockRef.current = false;
-    }, 400);
+    }, GUESS_COOLDOWN_MS + SUBMIT_LOCK_MARGIN_MS);
 
     const word = guessText.trim().toUpperCase();
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
@@ -600,6 +614,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               <section className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-2 lg:px-6 lg:py-4">
                 <p className="truncate text-center text-sm font-medium text-zinc-700 lg:text-lg">
                   <span className="font-semibold">{opponent.username}</span>
+                  {opponent.isBot && (
+                    <span className="ml-1.5 rounded bg-zinc-200 px-1.5 py-0.5 align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600">
+                      Bot
+                    </span>
+                  )}
                   <span className="mx-1.5 text-zinc-400">·</span>
                   <span className="font-black text-emerald-700">{opponentFoundLetterCount ?? 0}</span>
                   <span className="text-zinc-500">/5</span> letters found

@@ -8,9 +8,22 @@ export const WAITING_GAME_TTL_MS = 12 * 60 * 60 * 1000;
 export const CHAT_COOLDOWN_MS = 800;
 export const CHAT_BURST_WINDOW_MS = 30 * 1000;
 export const CHAT_BURST_LIMIT = 5;
-export const GUESS_COOLDOWN_MS = 1200;
+// Guess pacing. These are anti-spam bounds, not a gameplay mechanic: FourFive
+// is a race, so any pace a person can physically type at has to be legal.
+//
+// The previous values (1200ms cooldown, 5 per 15s) were tighter than ordinary
+// play — a steady guess every two seconds was rejected on the fifth guess, and
+// the rejection read as the guess silently vanishing. The sustained ceiling is
+// what matters: BURST_LIMIT / BURST_WINDOW is now one guess per second, which
+// is faster than anyone types a four-letter word plus Enter.
+//
+// The client submit lock imports GUESS_COOLDOWN_MS directly rather than
+// hardcoding its own value — the two drifted apart before (client 400ms vs
+// server 1200ms), which opened an 800ms window where the UI accepted a guess
+// the server was always going to reject.
+export const GUESS_COOLDOWN_MS = 600;
 export const GUESS_BURST_WINDOW_MS = 15 * 1000;
-export const GUESS_BURST_LIMIT = 5;
+export const GUESS_BURST_LIMIT = 15;
 
 type GameDocLike<TGameId extends string = string, TPlayerId extends string = string> = {
   _id: TGameId;
@@ -30,6 +43,7 @@ type PlayerDocLike<TPlayerId extends string = string, TUserId extends string = s
   secretWord?: string;
   alphabet: Record<string, AlphabetState>;
   totalGuesses: number;
+  isBot?: boolean;
 };
 
 type GuessDocLike<TGuessId extends string = string, TPlayerId extends string = string> = {
@@ -312,6 +326,7 @@ export function buildGameStateView<
           username: opponent.username,
           totalGuesses: opponent.totalGuesses,
           secretWord: shouldRevealWords ? opponent.secretWord : undefined,
+          isBot: opponent.isBot ?? false,
         }
       : null,
     myFoundLetterCount: opponent ? countDiscoveredSecretLetters(opponent.secretWord, me.alphabet) : null,

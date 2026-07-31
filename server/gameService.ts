@@ -17,6 +17,13 @@ import {
   sanitizeChatText,
   sanitizeUsername,
 } from "../shared/gameLogic.js";
+import {
+  BOT_DISPLAY_NAMES,
+  isBotDifficulty,
+  nextMoveDelayMs,
+  pickBotSecretWord,
+  type BotDifficulty,
+} from "../shared/botBrain.js";
 import { getWordValidationReason } from "../shared/wordBank.js";
 import type {
   AlphabetState,
@@ -42,6 +49,7 @@ type GameStatePlayerRow = {
   secret_word: string;
   alphabet_json: string;
   total_guesses: number;
+  is_bot: number;
 };
 
 type GameStateGuessRow = {
@@ -149,7 +157,7 @@ function ensureUniqueCode(): MaybePromise<string> {
 function getPlayerInGameFrom(runner: DbRunner, gameId: string, userId: string) {
   const query = runner
     .prepare(
-      `SELECT id, game_id, user_id, username, secret_word, alphabet_json, total_guesses
+      `SELECT id, game_id, user_id, username, secret_word, alphabet_json, total_guesses, is_bot, bot_difficulty
        FROM players
        WHERE game_id = ?
        ORDER BY created_at ASC`
@@ -162,6 +170,8 @@ function getPlayerInGameFrom(runner: DbRunner, gameId: string, userId: string) {
       secret_word: string;
       alphabet_json: string;
       total_guesses: number;
+      is_bot: number;
+      bot_difficulty: string | null;
     }>>;
 
   const resolvePlayers = (players: Array<{
@@ -172,6 +182,8 @@ function getPlayerInGameFrom(runner: DbRunner, gameId: string, userId: string) {
     secret_word: string;
     alphabet_json: string;
     total_guesses: number;
+    is_bot: number;
+    bot_difficulty: string | null;
   }>) => {
     const player = players.find((entry) => entry.user_id === userId);
     if (!player) {
@@ -185,6 +197,15 @@ function getPlayerInGameFrom(runner: DbRunner, gameId: string, userId: string) {
   };
 
   return isPromiseLike(query) ? query.then(resolvePlayers) : resolvePlayers(query);
+}
+
+/**
+ * Bot games are practice, not ranked play: they never touch user_stats, so the
+ * leaderboard stays a record of games against real people and cannot be farmed
+ * by grinding the easy bot.
+ */
+function gameHasBot(players: Array<{ is_bot?: number }>): boolean {
+  return players.some((entry) => Boolean(entry.is_bot));
 }
 
 function getGameStatus(gameId: string) {
@@ -475,6 +496,158 @@ export function createGame(
 
     return { gameId, code };
   })();
+}
+
+/**
+ * One shared account per difficulty rather than one per game. Bot results never
+ * reach user_stats (see gameHasBot), so nothing accumulates on these rows.
+ */
+export const BOT_USER_IDS: Record<BotDifficulty, string> = {
+  easy: "bot-easy",
+  medium: "bot-medium",
+  hard: "bot-hard",
+};
+
+// users.username feeds the social-handle uniqueness index, so a bot account
+// occupies that namespace whether we want it to or not. These names contain a
+// "." on purpose: isValidSocialUsername is /^[a-z0-9][a-z0-9_-]{1,19}$/, so no
+// human can ever register one, which makes the account unsquattable.
+//
+// That matters because the failure was severe: with a registerable name, a
+// single signup as "rookie-bot" took the row the bot needed, and from then on
+// EVERY user's easy-mode bot game failed with "Unable to set up the bot
+// opponent" — permanently, since retrying can't free the name.
+//
+// These are internal identifiers only. The name players actually see comes
+// from players.username (BOT_DISPLAY_NAMES).
+const BOT_ACCOUNT_USERNAMES: Record<BotDifficulty, string> = {
+  easy: "bot.easy",
+  medium: "bot.medium",
+  hard: "bot.hard",
+};
+
+async function ensureBotUser(difficulty: BotDifficulty): Promise<string> {
+  const userId = BOT_USER_IDS[difficulty];
+
+  const existing = (await db.prepare(`SELECT id FROM users WHERE id = ?`).get(userId)) as { id: string } | undefined;
+  if (existing) {
+    return userId;
+  }
+
+  try {
+    await db
+      .prepare(
+        `INSERT INTO users (id, email, username, password_hash, is_anonymous, is_bot, created_at)
+         VALUES (?, NULL, ?, NULL, 0, 1, ?)`
+      )
+      .run(userId, BOT_ACCOUNT_USERNAMES[difficulty], now());
+  } catch {
+    // Two requests can race to seed the same bot account. Losing that race is
+    // fine as long as the row exists afterwards, which the recheck confirms.
+  }
+
+  const confirmed = (await db.prepare(`SELECT id FROM users WHERE id = ?`).get(userId)) as { id: string } | undefined;
+  if (!confirmed) {
+    throw new Error("Unable to set up the bot opponent. Please try again.");
+  }
+
+  return userId;
+}
+
+/**
+ * Starts a game against the bot. Unlike a normal game this opens already
+ * `active` with both seats filled — there is nobody to wait for, so there is no
+ * lobby stage.
+ *
+ * Written async-only rather than in the two-branch style used elsewhere in this
+ * file: every statement here goes through the shared `db` interface, and
+ * awaiting SQLite's synchronous results is harmless.
+ */
+export async function createBotGame(
+  user: AuthUser,
+  usernameInput: string,
+  secretWordInput: string,
+  difficultyInput: string
+): Promise<{ gameId: string; code: string; botName: string }> {
+  const username = sanitizeUsername(usernameInput);
+  const secretWord = normalizeWord(secretWordInput);
+
+  if (!isValidUsername(username)) {
+    throw new Error("Username must be 2-20 characters and only use letters, numbers, spaces, hyphens, or underscores.");
+  }
+
+  assertValidDictionaryWord(secretWord, 5);
+
+  if (!isBotDifficulty(difficultyInput)) {
+    throw new Error("Choose a bot difficulty of easy, medium, or hard.");
+  }
+
+  const difficulty = difficultyInput;
+  const botUserId = await ensureBotUser(difficulty);
+  const botSecretWord = pickBotSecretWord();
+
+  const gameId = uuid();
+  const humanPlayerId = uuid();
+  const botPlayerId = uuid();
+  const createdAt = now();
+  const code = await ensureUniqueCode();
+
+  const insertPlayerSql = `INSERT INTO players (
+      id, game_id, user_id, username, secret_word_hash, secret_word, alphabet_json,
+      total_guesses, is_bot, bot_difficulty, bot_next_move_at, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)`;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .prepare(
+        `INSERT INTO games (id, code, status, public, created_at, last_activity_at)
+         VALUES (?, ?, 'active', 0, ?, ?)`
+      )
+      .run(gameId, code, createdAt, createdAt);
+
+    await tx
+      .prepare(insertPlayerSql)
+      .run(
+        humanPlayerId,
+        gameId,
+        user.id,
+        username,
+        encodeSecretWord(secretWord),
+        secretWord,
+        JSON.stringify(createEmptyAlphabet()),
+        0,
+        null,
+        null,
+        createdAt
+      );
+
+    await tx
+      .prepare(insertPlayerSql)
+      .run(
+        botPlayerId,
+        gameId,
+        botUserId,
+        BOT_DISPLAY_NAMES[difficulty],
+        encodeSecretWord(botSecretWord),
+        botSecretWord,
+        JSON.stringify(createEmptyAlphabet()),
+        1,
+        difficulty,
+        createdAt + nextMoveDelayMs(difficulty),
+        createdAt
+      );
+
+    await upsertPlayerPresence(
+      { playerId: humanPlayerId, gameId, userId: user.id, state: "online", at: createdAt },
+      tx
+    );
+    await upsertPlayerPresence(
+      { playerId: botPlayerId, gameId, userId: botUserId, state: "online", at: createdAt },
+      tx
+    );
+  })();
+
+  return { gameId, code, botName: BOT_DISPLAY_NAMES[difficulty] };
 }
 
 export function joinGame(
@@ -889,7 +1062,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
 
     const players = db
       .prepare(
-        `SELECT id, user_id, username, secret_word, alphabet_json, total_guesses
+        `SELECT id, user_id, username, secret_word, alphabet_json, total_guesses, is_bot
          FROM players
          WHERE game_id = ?
          ORDER BY created_at ASC`
@@ -933,6 +1106,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         secretWord: player.secret_word,
         alphabet: parseAlphabet(player.alphabet_json),
         totalGuesses: player.total_guesses,
+        isBot: Boolean(player.is_bot),
       })),
       guesses: guesses.map((guess) => ({
         _id: guess.id,
@@ -978,6 +1152,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
             username: view.opponent.username,
             totalGuesses: view.opponent.totalGuesses,
             secretWord: view.opponent.secretWord,
+            isBot: view.opponent.isBot,
           }
         : null,
       myGuesses: view.myGuesses.map((guess) => ({
@@ -1005,7 +1180,9 @@ export function getGameState(user: AuthUser, gameId: string): any {
       opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
-        opponent: view.opponent ? resolvePresence(view.opponent._id) : null,
+        // A bot never disconnects, so it is not subject to the presence TTL —
+        // otherwise it would flicker offline between its slower moves.
+        opponent: view.opponent ? (view.opponent.isBot ? "online" : resolvePresence(view.opponent._id)) : null,
       },
     };
   }
@@ -1038,7 +1215,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
 
     const players = (await db
       .prepare(
-        `SELECT id, user_id, username, secret_word, alphabet_json, total_guesses
+        `SELECT id, user_id, username, secret_word, alphabet_json, total_guesses, is_bot
          FROM players
          WHERE game_id = ?
          ORDER BY created_at ASC`
@@ -1082,6 +1259,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         secretWord: player.secret_word,
         alphabet: parseAlphabet(player.alphabet_json),
         totalGuesses: player.total_guesses,
+        isBot: Boolean(player.is_bot),
       })),
       guesses: guesses.map((guess) => ({
         _id: guess.id,
@@ -1127,6 +1305,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
             username: view.opponent.username,
             totalGuesses: view.opponent.totalGuesses,
             secretWord: view.opponent.secretWord,
+            isBot: view.opponent.isBot,
           }
         : null,
       myGuesses: view.myGuesses.map((guess) => ({
@@ -1154,7 +1333,9 @@ export function getGameState(user: AuthUser, gameId: string): any {
       opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
-        opponent: view.opponent ? resolvePresence(view.opponent._id) : null,
+        // A bot never disconnects, so it is not subject to the presence TTL —
+        // otherwise it would flicker offline between its slower moves.
+        opponent: view.opponent ? (view.opponent.isBot ? "online" : resolvePresence(view.opponent._id)) : null,
       },
     };
   })();
@@ -1365,8 +1546,10 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
         tx.prepare(
           `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
         ).run(player.id, submittedAt, submittedAt, gameId);
-        updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
-        updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
+        if (!gameHasBot(players)) {
+          updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
+          updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
+        }
       } else {
         tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
       }
@@ -1459,8 +1642,10 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
             `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
           )
           .run(player.id, submittedAt, submittedAt, gameId);
-        await updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
-        await updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
+        if (!gameHasBot(players)) {
+          await updateUserStatsWithRunner(tx, user.id, true, nextGuessNumber, player.username);
+          await updateUserStatsWithRunner(tx, opponent.user_id, false, opponent.total_guesses, opponent.username);
+        }
       } else {
         await tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
       }
@@ -1514,8 +1699,10 @@ export function forfeitGame(user: AuthUser, gameId: string): any {
       tx.prepare(
         `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
       ).run(opponent.id, completedAt, completedAt, gameId);
-      updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
-      updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+      if (!gameHasBot(players)) {
+        updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
+        updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+      }
     })();
 
     void broadcastGameSignal(gameId, "updated");
@@ -1555,8 +1742,10 @@ export function forfeitGame(user: AuthUser, gameId: string): any {
           `UPDATE games SET status = 'completed', winner_player_id = ?, completed_at = ?, last_activity_at = ? WHERE id = ?`
         )
         .run(opponent.id, completedAt, completedAt, gameId);
-      await updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
-      await updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+      if (!gameHasBot(players)) {
+        await updateUserStatsWithRunner(tx, player.user_id, false, player.total_guesses, player.username);
+        await updateUserStatsWithRunner(tx, opponent.user_id, true, opponent.total_guesses, opponent.username);
+      }
     })();
 
     void broadcastGameSignal(gameId, "updated");

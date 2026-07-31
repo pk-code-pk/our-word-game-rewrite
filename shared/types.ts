@@ -68,6 +68,7 @@ export interface GameStateView {
     username: string;
     totalGuesses: number;
     secretWord?: string;
+    isBot: boolean;
   };
   myGuesses: GuessView[];
   opponentGuesses: GuessView[];

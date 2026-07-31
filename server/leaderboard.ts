@@ -277,6 +277,13 @@ export function getLeaderboard(): any {
        WHERE g.status = 'completed'
          AND g.completed_at IS NOT NULL
          AND g.winner_player_id IS NOT NULL
+         -- Standings are recomputed from raw games here rather than read from
+         -- user_stats, so bot games have to be excluded at this query too.
+         -- Without this, grinding the easy bot would top the leaderboard.
+         AND NOT EXISTS (
+           SELECT 1 FROM players bot_player
+           WHERE bot_player.game_id = g.id AND bot_player.is_bot = 1
+         )
        ORDER BY g.completed_at ASC, g.created_at ASC, g.id ASC, p.created_at ASC, p.id ASC`;
 
   if (databaseProvider === "sqlite") {

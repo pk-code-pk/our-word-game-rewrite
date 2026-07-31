@@ -443,8 +443,12 @@ function backfillUsernamesSync() {
     return;
   }
 
+  // Bot accounts are excluded: their usernames are deliberately outside the
+  // human-registerable character set, and findAvailableUsername would sanitize
+  // them back into it — handing the reserved name back to the squatters this
+  // is meant to protect against.
   const rows = localDb
-    .prepare(`SELECT id, email, is_anonymous, username FROM users ORDER BY created_at ASC, id ASC`)
+    .prepare(`SELECT id, email, is_anonymous, username FROM users WHERE is_bot = 0 ORDER BY created_at ASC, id ASC`)
     .all() as Array<{
     id: string;
     email: string | null;
@@ -475,8 +479,12 @@ async function backfillUsernamesRemote() {
     remoteDb = await getRemoteDb();
   }
 
+  // Bot accounts excluded — see the matching filter in backfillUsernamesSync.
+  // This must stay in sync with the SQLite path: when it was missing here, the
+  // backfill sanitized "bot.easy" into "bot-easy", which IS registerable, so
+  // the squat hole survived on Postgres while every SQLite test passed.
   const rows = (await remoteDb.unsafe(
-    `SELECT id, email, is_anonymous, username FROM users ORDER BY created_at ASC, id ASC`,
+    `SELECT id, email, is_anonymous, username FROM users WHERE is_bot = 0 ORDER BY created_at ASC, id ASC`,
     [],
     { prepare: false }
   )) as Array<{
@@ -500,6 +508,37 @@ async function backfillUsernamesRemote() {
     if (row.username?.trim() !== username) {
       await remoteDb.unsafe(`UPDATE users SET username = $1 WHERE id = $2`, [username, row.id], { prepare: false });
     }
+  }
+}
+
+// Bot accounts predate the users.is_bot column and the reserved-username
+// scheme, so an already-deployed database has them as ordinary users holding
+// human-registerable names. Mark them and move them onto the reserved names,
+// which frees "rookie-bot" et al. for real players and makes the accounts
+// unsquattable going forward. Keyed on the fixed ids from gameService, which
+// are the only rows that were ever created this way.
+const BOT_USER_MIGRATIONS: ReadonlyArray<{ id: string; username: string }> = [
+  { id: "bot-easy", username: "bot.easy" },
+  { id: "bot-medium", username: "bot.medium" },
+  { id: "bot-hard", username: "bot.hard" },
+];
+
+function markExistingBotUsersLocal() {
+  if (!localDb) {
+    return;
+  }
+  const update = localDb.prepare(`UPDATE users SET is_bot = 1, username = ? WHERE id = ?`);
+  for (const bot of BOT_USER_MIGRATIONS) {
+    update.run(bot.username, bot.id);
+  }
+}
+
+async function markExistingBotUsersRemote() {
+  const client = remoteDb ?? (await getRemoteDb());
+  for (const bot of BOT_USER_MIGRATIONS) {
+    await client.unsafe(`UPDATE users SET is_bot = 1, username = $1 WHERE id = $2`, [bot.username, bot.id], {
+      prepare: false,
+    });
   }
 }
 
@@ -568,6 +607,7 @@ export function initDb(): MaybePromise<void> {
         username TEXT,
         password_hash TEXT,
         is_anonymous INTEGER NOT NULL DEFAULT 0,
+        is_bot INTEGER NOT NULL DEFAULT 0,
         created_at BIGINT NOT NULL
       );
 
@@ -600,6 +640,9 @@ export function initDb(): MaybePromise<void> {
         secret_word TEXT NOT NULL,
         alphabet_json TEXT NOT NULL,
         total_guesses INTEGER NOT NULL DEFAULT 0,
+        is_bot INTEGER NOT NULL DEFAULT 0,
+        bot_difficulty TEXT,
+        bot_next_move_at BIGINT,
         created_at BIGINT NOT NULL,
         FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
         FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -735,9 +778,15 @@ export function initDb(): MaybePromise<void> {
     }
 
     ensureColumnLocal("users", "username", "username TEXT");
+    ensureColumnLocal("users", "is_bot", "is_bot INTEGER NOT NULL DEFAULT 0");
+    markExistingBotUsersLocal();
     backfillUsernamesSync();
     localDb.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(LOWER(username))`);
     ensureColumnLocal("user_stats", "total_win_guesses", "total_win_guesses INTEGER NOT NULL DEFAULT 0");
+    ensureColumnLocal("players", "is_bot", "is_bot INTEGER NOT NULL DEFAULT 0");
+    ensureColumnLocal("players", "bot_difficulty", "bot_difficulty TEXT");
+    ensureColumnLocal("players", "bot_next_move_at", "bot_next_move_at BIGINT");
+    localDb.exec(`CREATE INDEX IF NOT EXISTS idx_players_bot_next_move_at ON players(bot_next_move_at)`);
     return;
   }
 
@@ -752,6 +801,7 @@ export function initDb(): MaybePromise<void> {
           username TEXT,
           password_hash TEXT,
           is_anonymous INTEGER NOT NULL DEFAULT 0,
+          is_bot INTEGER NOT NULL DEFAULT 0,
           created_at BIGINT NOT NULL
         );
 
@@ -784,6 +834,9 @@ export function initDb(): MaybePromise<void> {
           secret_word TEXT NOT NULL,
           alphabet_json TEXT NOT NULL,
           total_guesses INTEGER NOT NULL DEFAULT 0,
+          is_bot INTEGER NOT NULL DEFAULT 0,
+          bot_difficulty TEXT,
+          bot_next_move_at BIGINT,
           created_at BIGINT NOT NULL,
           FOREIGN KEY (game_id) REFERENCES games(id) ON DELETE CASCADE,
           FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -918,11 +971,19 @@ export function initDb(): MaybePromise<void> {
       // Migration is idempotent; ignore errors from concurrent Lambda cold-starts
       // running the same ALTER TABLE simultaneously.
       await migrateRemoteTimestampColumns().catch(() => undefined);
+      await ensureColumnRemote("users", "is_bot", "is_bot INTEGER NOT NULL DEFAULT 0");
+      await markExistingBotUsersRemote();
       await backfillUsernamesRemote();
       await remoteDb.unsafe(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(LOWER(username))`, [], {
         prepare: false,
       });
       await ensureColumnRemote("user_stats", "total_win_guesses", "total_win_guesses INTEGER NOT NULL DEFAULT 0");
+      await ensureColumnRemote("players", "is_bot", "is_bot INTEGER NOT NULL DEFAULT 0");
+      await ensureColumnRemote("players", "bot_difficulty", "bot_difficulty TEXT");
+      await ensureColumnRemote("players", "bot_next_move_at", "bot_next_move_at BIGINT");
+      await remoteDb.unsafe(`CREATE INDEX IF NOT EXISTS idx_players_bot_next_move_at ON players(bot_next_move_at)`, [], {
+        prepare: false,
+      });
     })();
 
     initPromise = promise;

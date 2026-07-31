@@ -19,9 +19,11 @@ import { databaseFile, databaseProvider, initDb, keepDbAlive } from "./db.js";
 import { enforceRateLimit, RateLimitError } from "./rateLimit.js";
 import { createSocialRouter } from "./friends.js";
 import { getLeaderboard } from "./leaderboard.js";
+import { maybeRunBotTurn } from "./botRunner.js";
 import {
   cancelWaitingLobby,
   cleanupExpiredWaitingGames,
+  createBotGame,
   createGame,
   forfeitGame,
   getGameState,
@@ -311,6 +313,17 @@ export function createApp() {
     }
   });
 
+  app.post("/api/games/bot", async (req, res) => {
+    try {
+      const user = await requireUser(req);
+      res.json(
+        await createBotGame(user, req.body.username ?? "", req.body.secretWord ?? "", req.body.difficulty ?? "medium")
+      );
+    } catch (error) {
+      respondWithRouteError(res, error, "Could not start a game against the bot.");
+    }
+  });
+
   app.post("/api/games/matchmake", async (req, res) => {
     try {
       const user = await requireUser(req);
@@ -332,6 +345,11 @@ export function createApp() {
   app.get("/api/games/:gameId", async (req, res) => {
     try {
       const user = await requireUser(req);
+      // The bot has no background loop, so its turns are driven from the
+      // requests the client already makes. Awaited before reading state so a
+      // move that just came due appears in this same response. No-ops (and
+      // never throws) for games without a bot.
+      await maybeRunBotTurn(req.params.gameId);
       res.json({ gameState: await getGameState(user, req.params.gameId) });
     } catch (error) {
       respondWithRouteError(res, error, "Could not load game state.");
@@ -341,7 +359,12 @@ export function createApp() {
   app.post("/api/games/:gameId/guess", async (req, res) => {
     try {
       const user = await requireUser(req);
-      res.json(await submitGuess(user, req.params.gameId, req.body.type, req.body.text ?? ""));
+      const result = await submitGuess(user, req.params.gameId, req.body.type, req.body.text ?? "");
+      // Give the bot a chance to answer immediately rather than waiting for the
+      // next poll. Awaited rather than fire-and-forget: a serverless function
+      // can be frozen the moment it responds, which would strand the work.
+      await maybeRunBotTurn(req.params.gameId);
+      res.json(result);
     } catch (error) {
       respondWithRouteError(res, error, "Could not submit guess.");
     }
