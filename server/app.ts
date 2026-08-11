@@ -416,14 +416,38 @@ export function createApp() {
     res.status(404).json({ error: "Route not found." });
   });
 
-  app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  app.use((error: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (res.headersSent) {
       return;
     }
 
     const message = error instanceof Error ? error.message : "Internal server error.";
-    const status = message === "You must be signed in." ? 401 : 500;
-    res.status(status).json({ error: message });
+
+    // Errors raised by middleware carry their own status: body-parser sets 400
+    // for unparseable JSON and 413 for a body over the 32kb limit. Reporting
+    // those as 500 told the client the server had broken when the request was
+    // the problem, and made a real fault indistinguishable from a malformed
+    // one in monitoring.
+    const carriedStatus = (error as { status?: unknown; statusCode?: unknown } | null)?.status
+      ?? (error as { statusCode?: unknown } | null)?.statusCode;
+    const status =
+      message === "You must be signed in."
+        ? 401
+        : typeof carriedStatus === "number" && carriedStatus >= 400 && carriedStatus <= 599
+          ? carriedStatus
+          : 500;
+
+    // A 5xx here is an unexpected fault, so its message is whatever the failure
+    // happened to say — a driver error, a constraint name, a stack frame. That
+    // is diagnostic detail, not something to hand a client in production.
+    // 4xx messages are written for the caller and pass through unchanged.
+    const isServerFault = status >= 500;
+    if (isServerFault) {
+      console.error(`[error] ${req.method} ${req.originalUrl} -> ${status}:`, error);
+    }
+    res.status(status).json({
+      error: isServerFault && isProduction() ? "Internal server error." : message,
+    });
   });
 
   return app;

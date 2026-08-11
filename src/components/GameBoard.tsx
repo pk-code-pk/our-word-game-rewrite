@@ -7,7 +7,7 @@ import { api } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
 import { useOptimisticAlphabet } from "../lib/useOptimisticAlphabet";
-import { GUESS_COOLDOWN_MS } from "../../shared/gameLogic";
+import { GUESS_SUBMIT_LOCK_MS } from "../../shared/gameLogic";
 
 // Lazy-loaded so the ~130 KB word list doesn't enter the initial bundle.
 // First guess submission pays the import cost; subsequent ones hit the cache.
@@ -19,10 +19,6 @@ async function loadWordValidator() {
   }
   return cachedWordValidator;
 }
-
-// Extra hold on top of the server cooldown to absorb request latency, so the
-// client never permits a guess the server will reject for pacing.
-const SUBMIT_LOCK_MARGIN_MS = 150;
 
 interface GameBoardProps {
   gameId: string;
@@ -45,7 +41,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const gameState = gameStateQuery.data?.gameState;
   const [guessText, setGuessText] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [optimisticGuess, setOptimisticGuess] = useState<OptimisticGuessRow | null>(null);
+  // A LIST, not a single row. With one slot, submitting a second guess evicted
+  // the first before its server row had arrived in gameState — on a slow
+  // connection the earlier guess visibly vanished from the list and only came
+  // back on the next successful refetch. Every in-flight guess keeps its own
+  // row until the matching committed row lands.
+  const [optimisticGuesses, setOptimisticGuesses] = useState<OptimisticGuessRow[]>([]);
   const [isLeavingWaitingLobby, setIsLeavingWaitingLobby] = useState(false);
   const [guessType, setGuessType] = useState<"fourLetter" | "fullWord">("fourLetter");
   const guessMaxLength = guessType === "fourLetter" ? 4 : 5;
@@ -111,6 +112,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   // click/form-submit can both fire in the same tick, before the async
   // isSubmitting state has re-rendered.
   const submitLockRef = useRef(false);
+  const optimisticSeqRef = useRef(0);
   const latestGameStatusRef = useRef(gameState?.game.status);
 
   const currentPlayer = gameState?.me;
@@ -201,22 +203,42 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     };
   }, []);
 
-  // Clear optimistic guess once the real state catches up. A safety timeout
-  // also clears it if the server quietly drops/rejects the guess (e.g. invalid
-  // word) and no matching entry ever lands in myGuesses.
+  // Retire optimistic rows once the committed rows catch up.
+  //
+  // Matching is by COUNT per text+type, not by existence: the same word can
+  // legitimately appear twice, and an existence check retired both optimistic
+  // rows as soon as the first committed one arrived.
+  //
+  // There is deliberately no blind timeout here any more. The old one cleared
+  // the row after 5s whether or not the guess had been accepted, so a guess
+  // that was committed server-side but whose refetch was slow got erased from
+  // the screen and did not reappear until the 20s safety poll. Rejections are
+  // already removed by id in the submit handler's catch, which knows the
+  // actual outcome — a timeout can only guess at it.
   useEffect(() => {
-    if (!optimisticGuess) {
+    if (optimisticGuesses.length === 0) {
       return;
     }
-    if (myGuesses.some((g) => g.text === optimisticGuess.text && g.type === optimisticGuess.type)) {
-      setOptimisticGuess(null);
-      return;
+
+    const committedCounts = new Map<string, number>();
+    for (const guess of myGuesses) {
+      const key = `${guess.type}:${guess.text}`;
+      committedCounts.set(key, (committedCounts.get(key) ?? 0) + 1);
     }
-    const timeoutId = window.setTimeout(() => {
-      setOptimisticGuess((current) => (current?.id === optimisticGuess.id ? null : current));
-    }, 5_000);
-    return () => window.clearTimeout(timeoutId);
-  }, [myGuesses, optimisticGuess]);
+
+    setOptimisticGuesses((current) => {
+      const remaining = current.filter((row) => {
+        const key = `${row.type}:${row.text}`;
+        const outstanding = committedCounts.get(key) ?? 0;
+        if (outstanding > 0) {
+          committedCounts.set(key, outstanding - 1);
+          return false;
+        }
+        return true;
+      });
+      return remaining.length === current.length ? current : remaining;
+    });
+  }, [myGuesses, optimisticGuesses.length]);
 
   useEffect(() => {
     latestGameStatusRef.current = gameState?.game.status;
@@ -262,11 +284,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       return;
     }
 
-    const effectiveCount = myGuesses.length + (optimisticGuess ? 1 : 0);
+    const effectiveCount = myGuesses.length + optimisticGuesses.length;
     if (shouldPinGuessPane(effectiveCount, keepMyGuessesPinnedRef.current)) {
       scrollGuessPaneToBottom(myGuessesRef.current);
     }
-  }, [gameState?.game.status, myGuesses.length, optimisticGuess]);
+  }, [gameState?.game.status, myGuesses.length, optimisticGuesses.length]);
 
   useEffect(() => {
     if (!currentPlayer) {
@@ -345,20 +367,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
 
   const submitCurrentGuess = async () => {
     if (!currentPlayer || !guessText.trim() || isSubmitting || submitLockRef.current) return;
-    submitLockRef.current = true;
-    // Hold the lock for the server's own cooldown, imported rather than
-    // hardcoded. When this was a local 400ms it was shorter than the server's
-    // window, so a second guess inside the gap was accepted by the UI and then
-    // always rejected — which the player saw as the guess disappearing.
-    //
-    // The margin keeps the client strictly the stricter of the two. The server
-    // measures its cooldown from when it *recorded* the previous guess, which
-    // is later than when we sent it by however long the round trip took, so an
-    // exactly-at-cooldown submit can still land inside the server's window.
-    window.setTimeout(() => {
-      submitLockRef.current = false;
-    }, GUESS_COOLDOWN_MS + SUBMIT_LOCK_MARGIN_MS);
 
+    // Local validation runs before the pacing lock is taken. These rejections
+    // never reach the server, so they must not spend the player's pacing
+    // budget — holding the lock here made a typo cost a full cooldown before
+    // the corrected word could be sent.
     const word = guessText.trim().toUpperCase();
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
     if (word.length !== expectedLength) {
@@ -377,9 +390,24 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     }
     void loadWordValidator(); // keep warming for the next guess
 
+    // Hold the lock for the whole pace the server enforces, imported rather
+    // than hardcoded. When this was a local 400ms it was shorter than the
+    // server's window, so a second guess inside the gap was accepted by the UI
+    // and then always rejected — which the player saw as the guess
+    // disappearing. GUESS_SUBMIT_LOCK_MS is looser than both server bounds by
+    // construction; see the invariant test in gameLogic.test.ts.
+    submitLockRef.current = true;
+    window.setTimeout(() => {
+      submitLockRef.current = false;
+    }, GUESS_SUBMIT_LOCK_MS);
+
     // Show the word in the list immediately; fill matchCount/isCorrect from the same
     // API response as the toast (no need to wait for WebSocket gameState).
-    setOptimisticGuess({ id: `opt-${Date.now()}`, text: word, type: guessType, pending: true });
+    // Date.now() alone collided when two submits landed in the same
+    // millisecond, which made the two rows indistinguishable to the catch
+    // path's removal-by-id.
+    const optimisticId = `opt-${Date.now()}-${optimisticSeqRef.current++}`;
+    setOptimisticGuesses((rows) => [...rows, { id: optimisticId, text: word, type: guessType, pending: true }]);
     setGuessText("");
     keepMyGuessesPinnedRef.current = true;
     if (window.innerWidth < 1024) {
@@ -398,10 +426,12 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     setIsSubmitting(true);
     try {
       const result = await gameStateQuery.submitGuess({ type: guessType, text: word });
-      setOptimisticGuess((row) =>
-        row && row.text === word && row.type === guessType
-          ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
-          : row
+      setOptimisticGuesses((rows) =>
+        rows.map((row) =>
+          row.id === optimisticId
+            ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
+            : row
+        )
       );
       // On mobile the toast otherwise enters during the keyboard-dismiss
       // animation — enter transition + keyboard slide + viewport restore all
@@ -424,7 +454,10 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
         showResultToast();
       }
     } catch (error) {
-      setOptimisticGuess(null);
+      // Remove only THIS guess's row. Clearing the whole list would erase
+      // other guesses still in flight, which is the bug this list exists to
+      // prevent.
+      setOptimisticGuesses((rows) => rows.filter((row) => row.id !== optimisticId));
       // Restore the failed word for a retry, but never clobber a next guess
       // the player already started typing during the round-trip.
       setGuessText((current) => (current === "" ? word : current));
@@ -692,7 +725,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                 title="My guesses"
                 elementId="my-guesses"
                 guesses={myGuesses}
-                optimisticGuess={optimisticGuess}
+                optimisticGuesses={optimisticGuesses}
                 emptyText="No guesses yet"
                 scrollRef={myGuessesRef}
                 onScroll={() => {
@@ -834,28 +867,41 @@ function GuessColumn(props: {
     matchCount: number;
     isCorrect: boolean;
   }>;
-  optimisticGuess?: OptimisticGuessRow | null;
+  optimisticGuesses?: OptimisticGuessRow[];
   emptyText: string;
   scrollRef: React.RefObject<HTMLDivElement | null>;
   onScroll: React.UIEventHandler<HTMLDivElement>;
 }) {
-  // Skip the optimistic row once the committed server guess with the same
-  // text+type has landed. There's a brief window where the server row arrives
-  // before the parent's clearing effect runs; without this guard both rows
-  // render together and the list flickers with a duplicate.
-  const optimistic = props.optimisticGuess;
-  const optimisticAlreadyCommitted =
-    optimistic != null &&
-    props.guesses.some((g) => g.text === optimistic.text && g.type === optimistic.type);
+  // Skip optimistic rows whose committed server row has already landed. There
+  // is a brief window where the server row arrives before the parent's
+  // retiring effect runs; without this guard both render and the list flickers
+  // with a duplicate. Counted per text+type rather than tested for existence,
+  // so a word guessed twice keeps its second optimistic row until the second
+  // committed row arrives.
+  const optimistic = props.optimisticGuesses ?? [];
+  const committedCounts = new Map<string, number>();
+  for (const guess of props.guesses) {
+    const key = `${guess.type}:${guess.text}`;
+    committedCounts.set(key, (committedCounts.get(key) ?? 0) + 1);
+  }
+  const pendingRows = optimistic.filter((row) => {
+    const key = `${row.type}:${row.text}`;
+    const outstanding = committedCounts.get(key) ?? 0;
+    if (outstanding > 0) {
+      committedCounts.set(key, outstanding - 1);
+      return false;
+    }
+    return true;
+  });
   const allGuesses =
-    optimistic && !optimisticAlreadyCommitted
+    pendingRows.length > 0
       ? [
           ...props.guesses,
-          {
-            ...optimistic,
-            matchCount: optimistic.matchCount ?? 0,
-            isCorrect: optimistic.isCorrect ?? false,
-          },
+          ...pendingRows.map((row) => ({
+            ...row,
+            matchCount: row.matchCount ?? 0,
+            isCorrect: row.isCorrect ?? false,
+          })),
         ]
       : props.guesses;
 

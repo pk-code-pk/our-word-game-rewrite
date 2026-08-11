@@ -96,7 +96,11 @@ async function getRemoteDb() {
       const client = postgres(remoteDatabaseUrl, {
         // Polling (every 2s for social, every 5s for recent games) plus per-game
         // WebSocket fetches mean even ~20 concurrent users can exhaust a pool of
-        // 3 in bursts. Neon allows hundreds of connections; size for headroom.
+        // 3 in bursts, so size for headroom. NOTE: this must stay under the
+        // connection ceiling of whichever Supabase connection string is in use —
+        // the transaction pooler tolerates far more clients than a direct
+        // connection does. Override with DATABASE_POOL_MAX if the deployment
+        // uses a direct connection.
         max: Number(process.env.DATABASE_POOL_MAX ?? 15),
         idle_timeout: 30,
         connect_timeout: 10,

@@ -31,6 +31,8 @@ export interface GameSocketResult {
   loading: boolean;
   connected: boolean;
   submitGuess: (payload: SubmitGuessPayload) => Promise<SubmitGuessResult>;
+  /** Force a state refetch and resolve once it has been applied. */
+  refetch: () => Promise<void>;
 }
 
 // Lazily-created singleton Supabase client. Created on first use so a missing
@@ -68,8 +70,10 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
   const gameIdRef = useRef<string | null>(gameId);
   gameIdRef.current = gameId;
   // Always points at the current effect's fetchState so submitGuess can force
-  // an immediate refetch outside the effect closure.
-  const refetchRef = useRef<() => void>(() => {});
+  // an immediate refetch outside the effect closure. It resolves when the
+  // fetched state has been applied, so callers that must not act on stale
+  // state (the winning guess) can await it.
+  const refetchRef = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     dataRef.current = undefined;
@@ -139,8 +143,9 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
       void fetchState();
     };
 
-    refetchRef.current = () => {
-      if (!cancelled) void fetchState();
+    refetchRef.current = async () => {
+      if (cancelled) return;
+      await fetchState();
     };
 
     // Initial load from the source of truth.
@@ -180,7 +185,7 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     return () => {
       cancelled = true;
       document.removeEventListener("visibilitychange", onVisible);
-      refetchRef.current = () => {};
+      refetchRef.current = async () => {};
       if (pollTimer !== null) {
         window.clearInterval(pollTimer);
         pollTimer = null;
@@ -204,9 +209,24 @@ export function useGameSocket(gameId: string | null): GameSocketResult {
     // a winning guess would leave them staring at an active board until the
     // slow safety poll. Refetch immediately with the response in hand.
     const result = await api.submitGuess(currentGameId, payload);
-    refetchRef.current();
+
+    // A winning guess AWAITS the refetch. The whole game-over UI is gated on
+    // gameState.game.status === "completed", so returning before the refetch
+    // lands left the winner on a still-active board — they would guess the
+    // same word again, get "Game is not active.", and only see the win when
+    // the 20s safety poll eventually fired. The extra round trip costs
+    // nothing here: it happens once, at the end of the game.
+    if (result.gameStatus === "completed") {
+      await refetchRef.current();
+    } else {
+      void refetchRef.current();
+    }
     return result;
   }, []);
 
-  return { data, error, loading, connected, submitGuess };
+  const refetch = useCallback(async () => {
+    await refetchRef.current();
+  }, []);
+
+  return { data, error, loading, connected, submitGuess, refetch };
 }

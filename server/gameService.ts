@@ -1500,20 +1500,6 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       throw new Error("Opponent not found.");
     }
 
-    const guessTimes = db
-      .prepare(
-        `SELECT created_at
-         FROM guesses
-         WHERE game_id = ? AND player_id = ?
-         ORDER BY created_at DESC
-         LIMIT 25`
-      )
-      .all(gameId, player.id) as Array<{ created_at: number }>;
-    const rateLimitError = getGuessRateLimitError(guessTimes.map((row) => row.created_at));
-    if (rateLimitError) {
-      throw new Error(rateLimitError);
-    }
-
     const text = normalizeWord(textInput);
     assertValidDictionaryWord(text, normalizedType === "fourLetter" ? 4 : 5);
 
@@ -1530,6 +1516,24 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       const lockedGame = lockGameForGuess(tx, gameId) as { id: string; status: "waiting" | "active" | "completed" } | undefined;
       if (!lockedGame || lockedGame.status !== "active") {
         throw new Error("Game is not active.");
+      }
+
+      // Under the lock, matching the Postgres branch. Correct here either way
+      // because the synchronous driver can't interleave two requests, but the
+      // two branches drifting apart is what let the Postgres race exist
+      // unnoticed — the SQLite tests passed.
+      const guessTimes = tx
+        .prepare(
+          `SELECT created_at
+           FROM guesses
+           WHERE game_id = ? AND player_id = ?
+           ORDER BY created_at DESC
+           LIMIT 25`
+        )
+        .all(gameId, player.id) as Array<{ created_at: number }>;
+      const rateLimitError = getGuessRateLimitError(guessTimes.map((row) => row.created_at));
+      if (rateLimitError) {
+        throw new Error(rateLimitError);
       }
 
       const nextGuessNumber =
@@ -1589,20 +1593,6 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       throw new Error("Opponent not found.");
     }
 
-    const guessTimes = (await db
-      .prepare(
-        `SELECT created_at
-         FROM guesses
-         WHERE game_id = ? AND player_id = ?
-         ORDER BY created_at DESC
-         LIMIT 25`
-      )
-      .all(gameId, player.id)) as Array<{ created_at: number }>;
-    const rateLimitError = getGuessRateLimitError(guessTimes.map((row) => row.created_at));
-    if (rateLimitError) {
-      throw new Error(rateLimitError);
-    }
-
     const text = normalizeWord(textInput);
     assertValidDictionaryWord(text, normalizedType === "fourLetter" ? 4 : 5);
 
@@ -1622,6 +1612,25 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
         | undefined;
       if (!lockedGame || lockedGame.status !== "active") {
         throw new Error("Game is not active.");
+      }
+
+      // The pacing check reads the player's own guess history, so it has to run
+      // under the same lock as the insert. Outside it, two overlapping requests
+      // both read a history without the other's guess in it, both pass, and
+      // both insert — a double-submit landed twice on Postgres while SQLite hid
+      // it behind its synchronous driver.
+      const guessTimes = (await tx
+        .prepare(
+          `SELECT created_at
+           FROM guesses
+           WHERE game_id = ? AND player_id = ?
+           ORDER BY created_at DESC
+           LIMIT 25`
+        )
+        .all(gameId, player.id)) as Array<{ created_at: number }>;
+      const rateLimitError = getGuessRateLimitError(guessTimes.map((row) => row.created_at));
+      if (rateLimitError) {
+        throw new Error(rateLimitError);
       }
 
       const nextGuessNumber =

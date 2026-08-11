@@ -1,6 +1,5 @@
 import http from "node:http";
 import { app } from "./app.js";
-import { keepDbAlive } from "./db.js";
 
 const PORT = Number(process.env.PORT ?? 3001);
 
@@ -9,13 +8,12 @@ const PORT = Number(process.env.PORT ?? 3001);
 // server to attach — this keeps the app serverless-safe on Vercel.
 const httpServer = http.createServer(app);
 
+// The database is Supabase Postgres, which pauses after 7 days of inactivity,
+// not 5 minutes. The /api/keepalive Vercel Cron in vercel.json already covers
+// that; the 4-minute keep-warm loop that used to live here was written for Neon
+// and only added a query every 4 minutes forever.
 httpServer.listen(PORT, () => {
   console.log(`FourFive backend listening on http://localhost:${PORT}`);
-
-  // Keep Neon DB awake every 4 minutes (Neon pauses after 5 min idle).
-  setInterval(() => {
-    void keepDbAlive();
-  }, 4 * 60 * 1000);
 });
 
 let isShuttingDown = false;

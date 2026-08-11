@@ -11,19 +11,32 @@ export const CHAT_BURST_LIMIT = 5;
 // Guess pacing. These are anti-spam bounds, not a gameplay mechanic: FourFive
 // is a race, so any pace a person can physically type at has to be legal.
 //
-// The previous values (1200ms cooldown, 5 per 15s) were tighter than ordinary
-// play — a steady guess every two seconds was rejected on the fifth guess, and
-// the rejection read as the guess silently vanishing. The sustained ceiling is
-// what matters: BURST_LIMIT / BURST_WINDOW is now one guess per second, which
-// is faster than anyone types a four-letter word plus Enter.
+// There are two server bounds and they have to agree with the client, or the
+// UI accepts a guess the server was always going to reject — which is what a
+// player experiences as the guess disappearing:
 //
-// The client submit lock imports GUESS_COOLDOWN_MS directly rather than
-// hardcoding its own value — the two drifted apart before (client 400ms vs
-// server 1200ms), which opened an 800ms window where the UI accepted a guess
-// the server was always going to reject.
+//   1. the gap bound  — GUESS_COOLDOWN_MS between consecutive guesses
+//   2. the rate bound — GUESS_BURST_WINDOW_MS / GUESS_BURST_LIMIT sustained
+//
+// Fixing only the first is what happened before. The cooldown was relaxed from
+// 1200ms to 600ms and the client lock was rederived from it, but the burst
+// bound stayed at 15 per 15s — a sustained ceiling of one guess per second,
+// while the client lock permits one every GUESS_SUBMIT_LOCK_MS. Anything above
+// ~16 guesses of steady fast play still tripped it.
+//
+// GUESS_SUBMIT_LOCK_MS is the single pace the client enforces, and both server
+// bounds must be strictly looser than it. gameLogic.test.ts pins that
+// invariant so relaxing one bound without the other fails the suite.
 export const GUESS_COOLDOWN_MS = 600;
 export const GUESS_BURST_WINDOW_MS = 15 * 1000;
-export const GUESS_BURST_LIMIT = 15;
+export const GUESS_BURST_LIMIT = 22;
+
+// The margin keeps the client strictly the stricter of the two. The server
+// measures its cooldown from when it *recorded* the previous guess, which is
+// later than when we sent it by however long the round trip took, so an
+// exactly-at-cooldown submit can still land inside the server's window.
+export const GUESS_SUBMIT_LOCK_MARGIN_MS = 150;
+export const GUESS_SUBMIT_LOCK_MS = GUESS_COOLDOWN_MS + GUESS_SUBMIT_LOCK_MARGIN_MS;
 
 type GameDocLike<TGameId extends string = string, TPlayerId extends string = string> = {
   _id: TGameId;

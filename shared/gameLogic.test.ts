@@ -8,7 +8,12 @@ import {
   getNextAlphabetState,
   getChatModerationError,
   getChatRateLimitError,
+  getGuessRateLimitError,
   isWaitingGameExpired,
+  GUESS_BURST_LIMIT,
+  GUESS_BURST_WINDOW_MS,
+  GUESS_COOLDOWN_MS,
+  GUESS_SUBMIT_LOCK_MS,
   pushRecentResult,
   sanitizeChatText,
 } from "./gameLogic.js";
@@ -184,5 +189,47 @@ describe("game helpers", () => {
         12 * 60 * 60 * 1000 + 1
       )
     ).toBe(true);
+  });
+});
+
+// The disappearing-guess bug was a disagreement between the pace the client
+// permits and the pace the server allows. It has recurred once already: the
+// first fix relaxed the cooldown and rederived the client lock from it, but
+// left the burst bound at a stricter sustained rate, so steady fast play was
+// still rejected after ~16 guesses. These pin both bounds against the client
+// lock so relaxing one without the other fails here rather than in play.
+describe("guess pacing bounds agree with the client submit lock", () => {
+  it("holds the client lock looser than the server's gap bound", () => {
+    expect(GUESS_SUBMIT_LOCK_MS).toBeGreaterThan(GUESS_COOLDOWN_MS);
+  });
+
+  it("holds the client lock looser than the server's sustained rate bound", () => {
+    const sustainedGapMs = GUESS_BURST_WINDOW_MS / GUESS_BURST_LIMIT;
+    expect(GUESS_SUBMIT_LOCK_MS).toBeGreaterThan(sustainedGapMs);
+  });
+
+  it("accepts a full burst window of guesses at exactly the client's pace", () => {
+    // Replay what a player typing at the client's own lock produces: one guess
+    // every GUESS_SUBMIT_LOCK_MS, for longer than the burst window. Every one
+    // must be legal, including the guesses past GUESS_BURST_LIMIT.
+    const now = 1_000_000;
+    const guessCount = Math.ceil((GUESS_BURST_WINDOW_MS * 2) / GUESS_SUBMIT_LOCK_MS);
+    const times: number[] = [];
+
+    for (let i = 0; i < guessCount; i += 1) {
+      const at = now + i * GUESS_SUBMIT_LOCK_MS;
+      expect(getGuessRateLimitError(times, at)).toBeNull();
+      times.push(at);
+    }
+
+    expect(times.length).toBeGreaterThan(GUESS_BURST_LIMIT);
+  });
+
+  it("still rejects a pace faster than the client would ever send", () => {
+    const now = 1_000_000;
+    expect(getGuessRateLimitError([now - 10], now)).not.toBeNull();
+
+    const machineGunned = Array.from({ length: GUESS_BURST_LIMIT }, (_, i) => now - i * 100);
+    expect(getGuessRateLimitError(machineGunned, now)).not.toBeNull();
   });
 });
