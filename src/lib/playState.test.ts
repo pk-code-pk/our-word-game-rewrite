@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { clearActiveGame, createDefaultPlayState, normalizePlayState, resetPlayState } from "./playState";
+import { afterEach, describe, expect, it } from "vitest";
+import { clearActiveGame, createDefaultPlayState, normalizePlayState, readStoredPlayState, resetPlayState, writeStoredPlayState } from "./playState";
 
 describe("normalizePlayState", () => {
   it("falls back to the account username and derives lobby phase from a saved word", () => {
@@ -50,7 +50,7 @@ describe("normalizePlayState", () => {
 });
 
 describe("playState helpers", () => {
-  it("returns to the lobby after leaving a game when a secret word is still set", () => {
+  it("drops the secret word when leaving a game so the lobby box starts empty", () => {
     const state = normalizePlayState(
       {
         username: "ArenaName",
@@ -61,11 +61,14 @@ describe("playState helpers", () => {
       { username: "AccountName" }
     );
 
+    // Every route back to the lobby goes through here, and a finished game has
+    // revealed both words — carrying the old secret forward let a player start
+    // the next game with a word the opponent had already seen.
     expect(clearActiveGame(state)).toEqual({
       username: "ArenaName",
-      secretWord: "CRANE",
+      secretWord: "",
       currentGameId: "",
-      gamePhase: "lobby",
+      gamePhase: "setup",
       lobbyCode: "",
       isPublic: false,
     });
@@ -103,5 +106,55 @@ describe("playState helpers", () => {
       lobbyCode: "",
       isPublic: false,
     });
+  });
+});
+
+// The suite runs in node with no DOM, so stub just the storage surface
+// playState.ts touches rather than pulling in jsdom for two assertions.
+function useFakeStorage() {
+  const store = new Map<string, string>();
+  const localStorage = {
+    getItem: (key: string) => store.get(key) ?? null,
+    setItem: (key: string, value: string) => void store.set(key, value),
+    removeItem: (key: string) => void store.delete(key),
+  };
+  (globalThis as { window?: unknown }).window = { localStorage };
+  return localStorage;
+}
+
+describe("the secret word is never persisted", () => {
+  afterEach(() => {
+    delete (globalThis as { window?: unknown }).window;
+  });
+
+  it("does not restore a secret word from storage, including the legacy key", () => {
+    const storage = useFakeStorage();
+    const userId = "user-1";
+    storage.setItem(
+      `fourfive.playState.${userId}`,
+      JSON.stringify({ username: "ArenaName", secretWord: "CRANE", currentGameId: "", gamePhase: "lobby", lobbyCode: "", isPublic: false })
+    );
+    // Left behind by builds from before the word stopped being persisted.
+    storage.setItem(`fourfive.secretWord.${userId}`, "STOLE");
+
+    expect(readStoredPlayState(userId, { username: "AccountName" }).secretWord).toBe("");
+  });
+
+  it("writes an empty secret word and clears the legacy key", () => {
+    const storage = useFakeStorage();
+    const userId = "user-2";
+    storage.setItem(`fourfive.secretWord.${userId}`, "STALE");
+
+    writeStoredPlayState(userId, {
+      username: "ArenaName",
+      secretWord: "CRANE",
+      currentGameId: "",
+      gamePhase: "lobby",
+      lobbyCode: "",
+      isPublic: false,
+    });
+
+    expect(storage.getItem(`fourfive.secretWord.${userId}`)).toBeNull();
+    expect(JSON.parse(storage.getItem(`fourfive.playState.${userId}`) ?? "{}").secretWord).toBe("");
   });
 });

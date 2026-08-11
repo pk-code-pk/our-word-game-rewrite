@@ -113,8 +113,10 @@ export function readStoredPlayState(userId: string, user?: Pick<AuthUser, "usern
   const legacyState = {
     ...(isRecord(parsedState) ? parsedState : {}),
     username: window.localStorage.getItem(legacyUsernameKey) ?? (isRecord(parsedState) ? parsedState.username : undefined),
-    secretWord:
-      window.localStorage.getItem(legacySecretWordKey) ?? (isRecord(parsedState) ? parsedState.secretWord : undefined),
+    // Never restored — see writeStoredPlayState. Read as empty even if an older
+    // build left a value behind, so the box starts clear on the very first load
+    // after this change rather than only after the next write.
+    secretWord: "",
     currentGameId:
       window.localStorage.getItem(legacyGameIdKey) ?? (isRecord(parsedState) ? parsedState.currentGameId : undefined),
   };
@@ -132,7 +134,11 @@ export function writeStoredPlayState(userId: string, playState: PlayState) {
   const legacySecretWordKey = `fourfive.secretWord.${userId}`;
   const legacyGameIdKey = `fourfive.currentGameId.${userId}`;
 
-  window.localStorage.setItem(playStateKey, JSON.stringify(playState));
+  // The secret word is deliberately NOT persisted. Restoring it meant that
+  // closing the tab and coming back — or signing in again — repopulated the box
+  // with the last word played. It is only ever needed to start a game; once a
+  // game exists the server holds it.
+  window.localStorage.setItem(playStateKey, JSON.stringify({ ...playState, secretWord: "" }));
 
   if (playState.username.trim()) {
     window.localStorage.setItem(legacyUsernameKey, playState.username);
@@ -140,11 +146,9 @@ export function writeStoredPlayState(userId: string, playState: PlayState) {
     window.localStorage.removeItem(legacyUsernameKey);
   }
 
-  if (playState.secretWord.trim()) {
-    window.localStorage.setItem(legacySecretWordKey, playState.secretWord);
-  } else {
-    window.localStorage.removeItem(legacySecretWordKey);
-  }
+  // Same reason as above, and it also clears the key written by older builds so
+  // an existing player's stale word does not survive this change.
+  window.localStorage.removeItem(legacySecretWordKey);
 
   if (playState.currentGameId.trim()) {
     window.localStorage.setItem(legacyGameIdKey, playState.currentGameId);
@@ -158,11 +162,18 @@ export function writeStoredPlayState(userId: string, playState: PlayState) {
   }
 }
 
+// Leaving a game ALWAYS drops the secret word. It used to be preserved, so the
+// lobby's 5-letter box still held the word you had just played — and once a
+// game ends both words are revealed, which made it easy to start the next game
+// with a secret your opponent had already seen. Every path back to the lobby
+// (finished game, forfeit, cancelled lobby, error recovery) goes through here,
+// so clearing it here is what makes the box reliably empty.
 export function clearActiveGame(playState: PlayState): PlayState {
   return {
     ...playState,
     currentGameId: "",
-    gamePhase: playState.secretWord ? "lobby" : "setup",
+    secretWord: "",
+    gamePhase: "setup",
   };
 }
 

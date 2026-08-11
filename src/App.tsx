@@ -381,12 +381,9 @@ function Content() {
               <GameBoard
                 key={currentGameId}
                 gameId={currentGameId}
-                // Leaving the board sends you back with an EMPTY secret word.
-                // clearActiveGame keeps it, which meant the box still held the
-                // word you just played — easy to start the next game with a
-                // secret your opponent already saw. The other clearActiveGame
-                // call sites are error recovery, where wiping what the player
-                // typed would be its own annoyance, so they keep the word.
+                // Full reset rather than clearActiveGame: leaving the board
+                // should also drop the lobby code and public flag from the game
+                // just left. Both now clear the secret word (see playState).
                 onExitToMenu={() => setPlayState((prev) => resetPlayState(prev))}
               />
             ) : (
