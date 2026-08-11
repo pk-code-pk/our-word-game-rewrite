@@ -19,10 +19,10 @@ type BotDifficulty = "easy" | "medium" | "hard";
 
 // UI copy only. The bot's real display name comes back from the server so the
 // two can never drift apart.
-const BOT_OPTIONS: Array<{ difficulty: BotDifficulty; label: string; blurb: string }> = [
-  { difficulty: "easy", label: "Easy", blurb: "Guesses loosely, skips turns" },
-  { difficulty: "medium", label: "Medium", blurb: "Solid, steady pace" },
-  { difficulty: "hard", label: "Hard", blurb: "Sharp and fast" },
+const BOT_OPTIONS: Array<{ difficulty: BotDifficulty; label: string }> = [
+  { difficulty: "easy", label: "Rookie" },
+  { difficulty: "medium", label: "Varsity" },
+  { difficulty: "hard", label: "Elite" },
 ];
 
 export function GameLobby({
@@ -213,12 +213,6 @@ export function GameLobby({
             </button>
           </div>
 
-          <p className="text-center text-xs text-zinc-500">
-            <span className="font-medium text-zinc-600">Find match</span> pairs you with the next player online.{" "}
-            <span className="font-medium text-zinc-600">Invite friend</span> and{" "}
-            <span className="font-medium text-zinc-600">Accept invite</span> are for playing someone specific.
-          </p>
-
           {/* Play the bot */}
           <div className="border-t border-zinc-200 pt-5">
             <div className="mb-2.5 flex items-baseline justify-between">
@@ -232,12 +226,11 @@ export function GameLobby({
                   type="button"
                   onClick={() => handlePlayBot(option.difficulty)}
                   disabled={!hasUsername || isBusy}
-                  className="rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-left transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="rounded-lg border border-zinc-300 bg-white px-3 py-3 text-center transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <span className="block font-semibold text-zinc-900">
                     {startingBot === option.difficulty ? "Starting..." : option.label}
                   </span>
-                  <span className="mt-0.5 block text-xs text-zinc-500">{option.blurb}</span>
                 </button>
               ))}
             </div>

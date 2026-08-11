@@ -110,10 +110,12 @@ export const BOT_DIFFICULTY_CONFIG: Record<BotDifficulty, DifficultyConfig> = {
   },
 };
 
+// Kept in step with the lobby's difficulty labels (Rookie / Varsity / Elite),
+// so the name you pick is the name you play against.
 export const BOT_DISPLAY_NAMES: Record<BotDifficulty, string> = {
   easy: "Rookie Bot",
-  medium: "Sharp Bot",
-  hard: "Ruthless Bot",
+  medium: "Varsity Bot",
+  hard: "Elite Bot",
 };
 
 function wordToMask(word: string): number {

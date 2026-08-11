@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { inferApiErrorMessage, normalizeGameStateResponse } from "./api";
 
+// These payloads omit fields ON PURPOSE — that is what normalizeGameStateResponse
+// exists to repair, and what each test asserts. Typing them as the full
+// GameStateView would defeat the test, so the legacy shape is cast at the call
+// site instead of being padded out with fields a legacy server never sent.
+type RawGameStatePayload = Parameters<typeof normalizeGameStateResponse>[0];
+const normalizeLegacy = (payload: unknown) => normalizeGameStateResponse(payload as RawGameStatePayload);
+
 describe("normalizeGameStateResponse", () => {
   it("fills in safe defaults for legacy game-state payloads missing presence", () => {
-    const payload = normalizeGameStateResponse({
+    const payload = normalizeLegacy({
       gameState: {
         game: {
           id: "game-1",
@@ -40,7 +47,7 @@ describe("normalizeGameStateResponse", () => {
   });
 
   it("preserves the server-derived opponent progress count when present", () => {
-    const payload = normalizeGameStateResponse({
+    const payload = normalizeLegacy({
       gameState: {
         game: {
           id: "game-3",
@@ -73,7 +80,7 @@ describe("normalizeGameStateResponse", () => {
   });
 
   it("keeps opponent presence null when there is no opponent yet", () => {
-    const payload = normalizeGameStateResponse({
+    const payload = normalizeLegacy({
       gameState: {
         game: {
           id: "game-2",

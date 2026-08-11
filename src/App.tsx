@@ -19,6 +19,7 @@ import {
   clearActiveGame,
   createDefaultPlayState,
   readStoredPlayState,
+  resetPlayState,
   writeStoredPlayState,
   type PlayState,
 } from "./lib/playState";
@@ -380,7 +381,13 @@ function Content() {
               <GameBoard
                 key={currentGameId}
                 gameId={currentGameId}
-                onExitToMenu={() => setPlayState((prev) => clearActiveGame(prev))}
+                // Leaving the board sends you back with an EMPTY secret word.
+                // clearActiveGame keeps it, which meant the box still held the
+                // word you just played — easy to start the next game with a
+                // secret your opponent already saw. The other clearActiveGame
+                // call sites are error recovery, where wiping what the player
+                // typed would be its own annoyance, so they keep the word.
+                onExitToMenu={() => setPlayState((prev) => resetPlayState(prev))}
               />
             ) : (
               <div className="space-y-6">
