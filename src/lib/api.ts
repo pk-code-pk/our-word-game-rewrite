@@ -323,6 +323,10 @@ export const api = {
     request<{ cancelled: true }>(`/api/games/${gameId}/leave`, {
       method: "POST",
     }),
+  forfeitGame: (gameId: string) =>
+    request<{ status: "completed"; winnerPlayerId: string }>(`/api/games/${gameId}/forfeit`, {
+      method: "POST",
+    }),
   updateAlphabet: (
     gameId: string,
     payload: { letter: string; state: "present" | "absent" | "unknown" }

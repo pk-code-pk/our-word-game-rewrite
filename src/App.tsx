@@ -393,6 +393,9 @@ function Content() {
                   onOpenGame={(gameId) => {
                     setPlayState((prev) => ({ ...prev, currentGameId: gameId, gamePhase: "playing", lobbyCode: "" }));
                   }}
+                  // Refetch immediately rather than waiting out the 5s poll, so
+                  // a cleared game leaves the list as soon as it is cleared.
+                  onGameCleared={() => recentGamesQuery.refetch()}
                 />
 
                 {recentGamesQuery.error && (
