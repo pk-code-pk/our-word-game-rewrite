@@ -118,8 +118,14 @@ export function GameLobby({
   // different game has to wait, or the two `onGameStart` calls race and one of
   // the created games is orphaned.
   const isStartingGame = isFinding || startingBot !== null;
-  // Adds word validation on top: the buttons that need a valid secret word.
-  const isBusy = isStartingGame || wordStatus === "checking";
+  // Deliberately NOT gated on wordStatus === "checking". Clicking a start
+  // button blurs the secret input, which kicks off blur validation, which set
+  // wordStatus to "checking" and disabled the button in the same tick — so the
+  // click landed on a disabled button and was swallowed. The player had to
+  // click a second time for anything to happen. Every start handler already
+  // awaits ensureValidWord(), so an in-flight check is handled there and the
+  // button does not need to guard against it.
+  const isBusy = isStartingGame;
 
   return (
     <section className="mx-auto max-w-2xl">

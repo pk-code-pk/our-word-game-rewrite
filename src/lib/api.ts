@@ -115,18 +115,58 @@ type LegacyGameStateResponse = {
     | null;
 };
 
+// Every request is bounded. A bare fetch has no timeout: on a stalled mobile
+// connection the promise can hang indefinitely, and callers that gate UI state
+// on it (the guess submitter held an `isSubmitting` flag across the await) stay
+// wedged forever, silently discarding everything the player does next. A
+// request that cannot finish must FAIL so the caller's error path runs.
+export const REQUEST_TIMEOUT_MS = 15_000;
+
+export class RequestTimeoutError extends Error {
+  constructor(path: string) {
+    super("The server took too long to respond. Check your connection and try again.");
+    this.name = "RequestTimeoutError";
+    this.path = path;
+  }
+  path: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const hasBody = init?.body !== undefined;
   const token = getStoredToken();
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    credentials: "include",
-    headers: {
-      ...(hasBody ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(init?.headers ?? {}),
-    },
-    ...init,
-  });
+
+  // AbortSignal.any keeps any caller-supplied signal working alongside the
+  // timeout. Both are optional at runtime in older Safari, hence the guards.
+  const timeoutSignal =
+    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function"
+      ? AbortSignal.timeout(REQUEST_TIMEOUT_MS)
+      : undefined;
+  const callerSignal = init?.signal ?? undefined;
+  let signal: AbortSignal | undefined = timeoutSignal ?? callerSignal ?? undefined;
+  if (timeoutSignal && callerSignal && typeof AbortSignal.any === "function") {
+    signal = AbortSignal.any([timeoutSignal, callerSignal]);
+  }
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      credentials: "include",
+      headers: {
+        ...(hasBody ? { "Content-Type": "application/json" } : {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(init?.headers ?? {}),
+      },
+      ...init,
+      signal,
+    });
+  } catch (cause) {
+    // Distinguish "we gave up waiting" from a caller-initiated abort, so the
+    // timeout gets a message a player can act on.
+    if (timeoutSignal?.aborted && !callerSignal?.aborted) {
+      throw new RequestTimeoutError(path);
+    }
+    throw cause;
+  }
 
   if (!response.ok) {
     const contentType = response.headers.get("content-type");

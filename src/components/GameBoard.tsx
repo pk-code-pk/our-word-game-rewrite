@@ -113,6 +113,21 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   // isSubmitting state has re-rendered.
   const submitLockRef = useRef(false);
   const optimisticSeqRef = useRef(0);
+  // FIFO of guesses waiting to be sent, drained one at a time by
+  // drainGuessQueue so submission order is preserved and nothing is dropped.
+  const guessQueueRef = useRef<Array<{ optimisticId: string; word: string; type: "fourLetter" | "fullWord" }>>([]);
+  const drainingRef = useRef(false);
+  const cancelledRef = useRef(false);
+
+  // The drain loop awaits across renders, so it must not touch state after the
+  // board unmounts (leaving a game mid-flight).
+  useEffect(() => {
+    cancelledRef.current = false;
+    return () => {
+      cancelledRef.current = true;
+      guessQueueRef.current = [];
+    };
+  }, []);
   const latestGameStatusRef = useRef(gameState?.game.status);
 
   const currentPlayer = gameState?.me;
@@ -366,7 +381,11 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   };
 
   const submitCurrentGuess = async () => {
-    if (!currentPlayer || !guessText.trim() || isSubmitting || submitLockRef.current) return;
+    // NOTE: isSubmitting is deliberately NOT part of this guard. It reflects
+    // "a request is in flight", and gating input on it silently threw away
+    // every guess typed during a round trip. Pacing is the submit lock's job;
+    // delivery is the queue's.
+    if (!currentPlayer || !guessText.trim() || submitLockRef.current) return;
 
     // Local validation runs before the pacing lock is taken. These rejections
     // never reach the server, so they must not spend the player's pacing
@@ -423,47 +442,100 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       });
     }
 
+    // Hand off to the queue instead of awaiting the request here. See
+    // drainGuessQueue for why submission is serialized.
+    guessQueueRef.current.push({ optimisticId, word, type: guessType });
     setIsSubmitting(true);
+    void drainGuessQueue();
+  };
+
+  // Sends queued guesses ONE AT A TIME, in the order they were typed.
+  //
+  // This replaces `if (isSubmitting) return` at the top of the submit handler,
+  // which discarded the guess outright — no request, no toast, no row. The
+  // pacing lock is a 750ms timer but isSubmitting lasted the whole round trip,
+  // so on any connection slower than that the lock expired while the flag was
+  // still set and the guess vanished with zero feedback. Spamming on a phone
+  // lost most guesses that way, and a single hung request (now impossible —
+  // api.ts bounds every request) pinned the flag and dropped everything after.
+  //
+  // Serializing also fixes ordering. guess_number is assigned when the request
+  // REACHES the server, so two overlapping requests could commit in the
+  // opposite order and render the newer word above the older one. With one
+  // request in flight at a time, arrival order is typing order.
+  const drainGuessQueue = async () => {
+    if (drainingRef.current) {
+      return;
+    }
+    drainingRef.current = true;
+
     try {
-      const result = await gameStateQuery.submitGuess({ type: guessType, text: word });
-      setOptimisticGuesses((rows) =>
-        rows.map((row) =>
-          row.id === optimisticId
-            ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
-            : row
-        )
-      );
-      // On mobile the toast otherwise enters during the keyboard-dismiss
-      // animation — enter transition + keyboard slide + viewport restore all
-      // compete for the same frames and the toast looks choppy. Let the
-      // keyboard finish first; desktop shows it immediately.
-      const showResultToast = () => {
-        if (result.isCorrect) {
-          toast.success("You guessed it!");
-        } else if (guessType === "fullWord") {
-          toast("Not the word.");
-        } else {
-          toast(
-            `${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
+      while (guessQueueRef.current.length > 0) {
+        const queued = guessQueueRef.current[0];
+        try {
+          const result = await gameStateQuery.submitGuess({ type: queued.type, text: queued.word });
+          if (cancelledRef.current) return;
+          setOptimisticGuesses((rows) =>
+            rows.map((row) =>
+              row.id === queued.optimisticId
+                ? { ...row, pending: false, matchCount: result.matchCount, isCorrect: result.isCorrect }
+                : row
+            )
           );
+          // On mobile the toast otherwise enters during the keyboard-dismiss
+          // animation — enter transition + keyboard slide + viewport restore all
+          // compete for the same frames and the toast looks choppy. Let the
+          // keyboard finish first; desktop shows it immediately.
+          const showResultToast = () => {
+            if (result.isCorrect) {
+              toast.success("You guessed it!");
+            } else if (queued.type === "fullWord") {
+              toast("Not the word.");
+            } else {
+              toast(
+                `${result.matchCount} letter${result.matchCount !== 1 ? "s" : ""} match${result.matchCount === 1 ? "es" : ""}`
+              );
+            }
+          };
+          if (window.innerWidth < 1024) {
+            window.setTimeout(showResultToast, 450);
+          } else {
+            showResultToast();
+          }
+
+          if (result.isCorrect) {
+            // The game is over. Anything still queued would only collect
+            // "Game is not active." errors, so drop those rows quietly rather
+            // than firing a toast per guess.
+            const abandoned = guessQueueRef.current.slice(1);
+            guessQueueRef.current = [];
+            if (abandoned.length > 0) {
+              const abandonedIds = new Set(abandoned.map((entry) => entry.optimisticId));
+              setOptimisticGuesses((rows) => rows.filter((row) => !abandonedIds.has(row.id)));
+            }
+            return;
+          }
+        } catch (error) {
+          if (cancelledRef.current) return;
+          // Remove only THIS guess's row. Clearing the whole list would erase
+          // other guesses still queued, which is the bug this list exists to
+          // prevent.
+          setOptimisticGuesses((rows) => rows.filter((row) => row.id !== queued.optimisticId));
+          // Restore the failed word for a retry, but never clobber a next guess
+          // the player already started typing during the round-trip.
+          setGuessText((current) => (current === "" ? queued.word : current));
+          toast.error(error instanceof Error ? error.message : "Failed to submit guess");
+        } finally {
+          // Drop the head whatever happened, so one persistent failure can't
+          // spin the queue.
+          guessQueueRef.current.shift();
         }
-      };
-      if (window.innerWidth < 1024) {
-        window.setTimeout(showResultToast, 450);
-      } else {
-        showResultToast();
       }
-    } catch (error) {
-      // Remove only THIS guess's row. Clearing the whole list would erase
-      // other guesses still in flight, which is the bug this list exists to
-      // prevent.
-      setOptimisticGuesses((rows) => rows.filter((row) => row.id !== optimisticId));
-      // Restore the failed word for a retry, but never clobber a next guess
-      // the player already started typing during the round-trip.
-      setGuessText((current) => (current === "" ? word : current));
-      toast.error(error instanceof Error ? error.message : "Failed to submit guess");
     } finally {
-      setIsSubmitting(false);
+      drainingRef.current = false;
+      if (!cancelledRef.current) {
+        setIsSubmitting(guessQueueRef.current.length > 0);
+      }
     }
   };
 
@@ -809,11 +881,15 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     {isSubmitting ? "…" : "↑"}
                   </button>
                 </div>
+                {/* Switching guess length is local state and must never be
+                    blocked by an in-flight request: these were disabled while
+                    isSubmitting, so a player mid-rally could not switch to
+                    5-letter mode to make the winning guess — the click did
+                    nothing and they had to try again. */}
                 <div className="grid grid-cols-2 rounded-lg bg-zinc-100 p-0.5">
                   <button
                     type="button"
                     onClick={() => selectGuessType("fourLetter")}
-                    disabled={isSubmitting}
                     className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
                       guessType === "fourLetter"
                         ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
@@ -826,7 +902,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                   <button
                     type="button"
                     onClick={() => selectGuessType("fullWord")}
-                    disabled={isSubmitting}
                     className={`inline-flex min-h-11 items-center justify-center rounded-md border px-3 py-2 text-sm font-semibold transition active:scale-[0.98] ${
                       guessType === "fullWord"
                         ? "border-zinc-900 bg-white text-zinc-900 shadow-sm"
