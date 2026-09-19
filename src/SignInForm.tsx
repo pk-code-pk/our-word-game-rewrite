@@ -59,10 +59,10 @@ export function SignInForm() {
   };
 
   return (
-    <div className="w-full max-w-full rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm sm:p-8">
-      <h2 className="text-2xl font-display font-bold tracking-tight text-zinc-900 sm:text-3xl">FourFive</h2>
+    <div className="w-full max-w-full">
+      <h2 className="text-center font-display text-4xl font-bold tracking-tight text-zinc-900 sm:text-5xl">FourFive</h2>
 
-      <div className="mt-6 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 shadow-inner">
+      <div className="mt-8 grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-100/70 p-1">
         <button
           type="button"
           className={`flex min-h-11 items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-semibold transition-all ${
@@ -162,7 +162,7 @@ export function SignInForm() {
       <button
         type="button"
         disabled={submitting || anonymousSubmitting}
-        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 py-3 font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50"
+        className="inline-flex min-h-12 w-full items-center justify-center rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 font-semibold text-zinc-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
         onClick={() => {
           if (submitting || anonymousSubmitting) {
             return;

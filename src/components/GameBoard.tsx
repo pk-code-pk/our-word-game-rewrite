@@ -74,6 +74,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
       );
     });
   }, [greenLetterOrder]);
+  const gameDiscardedRef = useRef(false);
   const announcedCompletionRef = useRef<string | null>(null);
   const guessFormRef = useRef<HTMLFormElement | null>(null);
   const guessInputRef = useRef<HTMLInputElement | null>(null);
@@ -84,7 +85,6 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
   const currentPlayer = gameState?.me;
   const opponent = gameState?.opponent;
   const myGuesses = gameState?.myGuesses ?? [];
-  const opponentGuesses = gameState?.opponentGuesses ?? [];
   const opponentFoundLetterCount = gameState?.opponentFoundLetterCount ?? null;
 
   // Clear optimistic guess once the real state catches up
@@ -150,7 +150,9 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     }
 
     const markOffline = () => {
-      if (latestGameStatusRef.current === "completed") {
+      // Cancelling deletes the lobby outright, so a parting presence beacon would
+      // just 400 against a game id that no longer exists.
+      if (latestGameStatusRef.current === "completed" || gameDiscardedRef.current) {
         return;
       }
 
@@ -205,7 +207,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     }
 
     const expectedLength = guessType === "fourLetter" ? 4 : 5;
-    const validate = await loadWordValidator();
+    let validate: (word: string, len: 4 | 5) => boolean;
+    try {
+      validate = await loadWordValidator();
+    } catch {
+      toast.error("Could not load the word list. Check your connection and try again.");
+      return;
+    }
     if (!validate(word, expectedLength)) {
       toast.error("Not a valid word");
       return;
@@ -271,6 +279,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     setIsLeavingWaitingLobby(true);
     try {
       await api.leaveWaitingGame(gameId);
+      gameDiscardedRef.current = true;
       toast.success("Waiting lobby cancelled.");
       setIsLeavingWaitingLobby(false);
       onExitToMenu();
@@ -424,6 +433,7 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                         key={letter}
                         ref={(el) => {
                           if (el) greenTileRefs.current.set(letter.charCodeAt(0), el);
+                          else greenTileRefs.current.delete(letter.charCodeAt(0));
                         }}
                         className="inline-flex min-w-[2.25rem] items-center justify-center rounded-md border-2 border-emerald-600 bg-emerald-500 px-2 py-1 font-mono text-base font-bold tracking-widest text-white lg:min-w-[3rem] lg:px-3 lg:py-2 lg:text-xl"
                       >
@@ -525,6 +535,13 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
                     {isSubmitting ? "…" : "↑"}
                   </button>
                 </div>
+                {guessText.length > 0 && guessText.length !== (guessType === "fourLetter" ? 4 : 5) && (
+                  <p className="text-xs text-zinc-500">
+                    {guessText.length} letters typed. Switch to{" "}
+                    {guessType === "fourLetter" ? "5-letter guess" : "4-letter guess"} mode, or edit the word to{" "}
+                    {guessType === "fourLetter" ? 4 : 5} letters.
+                  </p>
+                )}
               </form>
             )}
 

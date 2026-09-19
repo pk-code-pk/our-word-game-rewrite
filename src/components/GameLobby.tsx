@@ -10,6 +10,8 @@ interface GameLobbyProps {
   onGameStart: (gameId: string) => void;
   onPlayWithFriend: () => void;
   onAcceptInvite: () => void;
+  /** Guests have no invite inbox to open, so the entry point is hidden for them. */
+  canAcceptInvite?: boolean;
   /** When set, the player arrived via an invite link for this match code. */
   inviteCode?: string | null;
   onJoinByInviteCode?: () => Promise<void>;
@@ -28,6 +30,7 @@ export function GameLobby({
   onGameStart,
   onPlayWithFriend,
   onAcceptInvite,
+  canAcceptInvite = true,
   inviteCode,
   onJoinByInviteCode,
   onDismissInvite,
@@ -131,9 +134,9 @@ export function GameLobby({
   };
 
   return (
-    <section className="mx-auto max-w-2xl">
-      <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
-        <div className="space-y-5 px-6 py-6">
+    <section>
+      <div>
+        <div className="space-y-5">
           {hasInvite && (
             <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
               <div className="text-sm text-blue-900">
@@ -159,7 +162,7 @@ export function GameLobby({
 
           {/* Secret word */}
           <div>
-            <label htmlFor="lobby-secret-word" className="mb-1.5 block text-sm font-medium text-zinc-700">
+            <label htmlFor="lobby-secret-word" className="mb-2 block text-sm font-semibold text-zinc-700">
               Secret word
             </label>
             <input
@@ -177,7 +180,7 @@ export function GameLobby({
               autoCapitalize="characters"
               spellCheck={false}
               disabled={wordStatus === "checking"}
-              className="w-full rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-3 font-mono text-2xl font-bold tracking-[0.35em] text-center text-zinc-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
+              className="w-full min-h-14 rounded-xl border border-zinc-200 bg-white/60 px-4 py-3 font-mono text-2xl font-bold tracking-[0.35em] text-center text-zinc-900 outline-none transition focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100 disabled:opacity-50"
             />
             <div className="mt-1.5 flex items-center justify-between text-xs">
               <span className="text-zinc-400">5 letters · no repeats · real word</span>
@@ -189,7 +192,7 @@ export function GameLobby({
 
           {/* Display name */}
           <div>
-            <label htmlFor="lobby-display-name" className="mb-1.5 block text-sm font-medium text-zinc-700">
+            <label htmlFor="lobby-display-name" className="mb-2 block text-sm font-semibold text-zinc-700">
               Display name
             </label>
             <input
@@ -200,7 +203,7 @@ export function GameLobby({
               placeholder="Your username"
               maxLength={20}
               autoComplete="nickname"
-              className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-[16px] text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+              className="auth-input-field text-[16px]"
             />
           </div>
 
@@ -211,7 +214,7 @@ export function GameLobby({
                 type="button"
                 onClick={handleJoinInvite}
                 disabled={!hasUsername || isBusy}
-                className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 w-full rounded-xl bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isJoiningInvite ? "Joining..." : `Join match ${inviteCode}`}
               </button>
@@ -219,7 +222,7 @@ export function GameLobby({
                 type="button"
                 onClick={handleFindGame}
                 disabled={!hasUsername || isBusy}
-                className="w-full rounded-lg border border-zinc-300 bg-white py-2.5 text-sm font-semibold text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                className="min-h-12 w-full rounded-xl border border-zinc-200 bg-white/60 py-3 text-sm font-semibold text-zinc-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {isFinding ? "Finding..." : "Or find a random match instead"}
               </button>
@@ -231,7 +234,7 @@ export function GameLobby({
                   type="button"
                   onClick={handleTextInvite}
                   disabled={!hasUsername || isBusy}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 py-3 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
                     <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
@@ -244,7 +247,7 @@ export function GameLobby({
                   type="button"
                   onClick={handleFindGame}
                   disabled={!hasUsername || isBusy}
-                  className="rounded-lg bg-zinc-900 py-3 font-semibold text-white transition hover:bg-zinc-800 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-white/60 py-3 font-semibold text-zinc-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   {isFinding ? "Finding..." : "Join game"}
                 </button>
@@ -252,17 +255,19 @@ export function GameLobby({
                   type="button"
                   onClick={onPlayWithFriend}
                   disabled={!hasUsername || isBusy}
-                  className="rounded-lg border border-zinc-300 bg-white py-3 font-semibold text-zinc-900 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  className="min-h-12 rounded-xl border border-zinc-200 bg-white/60 py-3 font-semibold text-zinc-800 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   Invite friend
                 </button>
-                <button
-                  type="button"
-                  onClick={onAcceptInvite}
-                  className="rounded-lg border border-zinc-300 bg-white py-3 font-semibold text-zinc-900 transition hover:bg-zinc-50"
-                >
-                  Accept invite
-                </button>
+                {canAcceptInvite && (
+                  <button
+                    type="button"
+                    onClick={onAcceptInvite}
+                    className="min-h-12 rounded-xl border border-zinc-200 bg-white/60 py-3 font-semibold text-zinc-800 transition hover:bg-white"
+                  >
+                    Accept invite
+                  </button>
+                )}
               </div>
             </div>
           )}

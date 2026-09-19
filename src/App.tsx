@@ -237,12 +237,6 @@ function Content() {
 
       <main className="flex-1 px-3 pb-4 pt-2 sm:px-4 sm:pb-6 sm:pt-3 md:px-6 lg:px-8 lg:pb-8 lg:pt-4">
         <div className="mx-auto w-full max-w-5xl">
-          {user?.isAnonymous ? (
-            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900 shadow-sm">
-              <strong>Guest mode.</strong> Sign out if you want a saved account and friends.
-            </div>
-          ) : null}
-
           <ScreenErrorBoundary resetKey={user?.id ?? "anonymous"}>
             {loading ? (
               <div className="space-y-4">
@@ -250,17 +244,27 @@ function Content() {
                 <div className="h-64 animate-pulse rounded-xl border border-zinc-200 bg-white" />
               </div>
             ) : !isAuthenticated ? (
-              <div className="mx-auto max-w-xl">
+              <div className="mx-auto w-full max-w-md pt-8 sm:pt-14">
                 <SignInForm />
               </div>
             ) : gamePhase === "playing" && currentGameId ? (
               <GameBoard
                 key={currentGameId}
                 gameId={currentGameId}
-                onExitToMenu={() => setPlayState((prev) => clearActiveGame(prev))}
+                onExitToMenu={() => {
+                  setPlayState((prev) => clearActiveGame(prev));
+                  recentGamesQuery.invalidate();
+                }}
               />
             ) : (
-              <div className="space-y-6">
+              <div className="mx-auto w-full max-w-2xl space-y-4">
+                {user?.isAnonymous ? (
+                  <p className="text-sm leading-6 text-zinc-500">
+                    <span className="font-semibold text-zinc-700">Guest mode.</span> Friends and direct invites need a saved
+                    account. Sign out to make one.
+                  </p>
+                ) : null}
+
                 <RecentGamesPanel
                   games={recentGames}
                   onOpenGame={(gameId) => {
@@ -268,14 +272,8 @@ function Content() {
                   }}
                 />
 
-                {user?.isAnonymous ? (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-                    Friend requests and direct invites are available on saved accounts.
-                  </div>
-                ) : null}
-
                 {recentGamesQuery.error && (
-                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
                     Trouble refreshing recent games — retrying in the background.
                   </div>
                 )}
@@ -291,6 +289,7 @@ function Content() {
                     }}
                     onPlayWithFriend={() => setOpenFriendsPanel(true)}
                     onAcceptInvite={() => setOpenInbox(true)}
+                    canAcceptInvite={canUseSocial}
                     inviteCode={pendingJoinCode || null}
                     onJoinByInviteCode={handleJoinByInviteCode}
                     onDismissInvite={dismissInvite}

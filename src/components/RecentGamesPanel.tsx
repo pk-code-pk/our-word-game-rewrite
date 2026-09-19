@@ -10,7 +10,7 @@ export function RecentGamesPanel({ games, onOpenGame }: RecentGamesPanelProps) {
   if (!game) return null;
 
   return (
-    <div className="mx-auto max-w-2xl">
+    <div>
       <button
         type="button"
         onClick={() => onOpenGame(game.gameId)}

@@ -15,6 +15,8 @@ export interface PollingQueryResult<T> {
   refreshing: boolean;
   lastUpdatedAt: number | null;
   isPaused: boolean;
+  /** Drops any in-flight response and refetches — call after a mutation. */
+  invalidate: () => void;
 }
 
 export function usePollingQuery<T>(
@@ -41,6 +43,7 @@ export function usePollingQuery<T>(
   const timeoutRef = useRef<number | undefined>(undefined);
   const refreshTimerRef = useRef<number | undefined>(undefined);
   const inFlightRef = useRef(false);
+  const refetchImmediatelyRef = useRef(false);
   const visibleRef = useRef(isDocumentVisible());
 
   loaderRef.current = loader;
@@ -151,8 +154,24 @@ export function usePollingQuery<T>(
       }
 
       setIsPaused(false);
-      scheduleNextRun(effectGeneration, intervalMs);
+
+      const refetchImmediately = refetchImmediatelyRef.current;
+      refetchImmediatelyRef.current = false;
+      scheduleNextRun(effectGeneration, refetchImmediately ? 0 : intervalMs);
     }
+  };
+
+  // A response already in flight was requested before the caller's mutation, so it
+  // would reinstate the very state the mutation removed. Drop it and refetch.
+  const invalidate = () => {
+    latestRequestRef.current += 1;
+
+    if (inFlightRef.current) {
+      refetchImmediatelyRef.current = true;
+      return;
+    }
+
+    scheduleNextRun(effectGenerationRef.current, 0);
   };
 
   useEffect(() => {
@@ -234,5 +253,5 @@ export function usePollingQuery<T>(
     };
   }, [enabled, intervalMs, pauseWhenHidden, refreshIndicatorDelayMs, ...deps]);
 
-  return { data, error, loading, refreshing, lastUpdatedAt, isPaused };
+  return { data, error, loading, refreshing, lastUpdatedAt, isPaused, invalidate };
 }

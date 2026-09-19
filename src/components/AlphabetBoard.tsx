@@ -124,6 +124,9 @@ export function AlphabetBoard({ gameId, alphabet, disabled = false }: AlphabetBo
       const greenCount = ALPHABET.filter((l) => getDisplayedState(l) === "present").length;
       if (greenCount >= 5) {
         newState = "absent";
+        toast("Five letters are already marked green, so this one went red instead.", {
+          id: "alphabet-green-limit",
+        });
       }
     }
 
