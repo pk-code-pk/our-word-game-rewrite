@@ -337,6 +337,29 @@ export function cleanupExpiredWaitingGames(): any {
   })();
 }
 
+// A waiting lobby holds only its creator, so a stranded one outlives the player and
+// keeps surfacing as a dead "Resume" card. Each player gets at most one open lobby.
+function discardOpenLobbies(userId: string, exceptGameId?: string): void | Promise<void> {
+  const selectOwnLobbies = `SELECT id FROM games WHERE status = 'waiting' AND id IN (SELECT game_id FROM players WHERE user_id = ?)`;
+  const staleIds = (rows: Array<{ id: string }>) => rows.map((row) => row.id).filter((id) => id !== exceptGameId);
+
+  if (databaseProvider === "sqlite") {
+    for (const gameId of staleIds(db.prepare(selectOwnLobbies).all(userId) as Array<{ id: string }>)) {
+      db.prepare(`DELETE FROM games WHERE id = ? AND status = 'waiting'`).run(gameId);
+      emitGameEvent({ type: "ended", gameId });
+    }
+    return;
+  }
+
+  return (async () => {
+    const rows = (await db.prepare(selectOwnLobbies).all(userId)) as Array<{ id: string }>;
+    for (const gameId of staleIds(rows)) {
+      await db.prepare(`DELETE FROM games WHERE id = ? AND status = 'waiting'`).run(gameId);
+      emitGameEvent({ type: "ended", gameId });
+    }
+  })();
+}
+
 export function performJoinWaitingGame(params: JoinWaitingGameParams): { gameId: string };
 export function performJoinWaitingGame(params: JoinWaitingGameParams): any {
   return performJoinWaitingGameWithRunner(db, params);
@@ -369,6 +392,7 @@ export function createGame(
 
   if (databaseProvider === "sqlite") {
     cleanupExpiredWaitingGames();
+    discardOpenLobbies(user.id);
 
     const gameId = uuid();
     const playerId = uuid();
@@ -406,6 +430,7 @@ export function createGame(
 
   return (async () => {
     await cleanupExpiredWaitingGames();
+    await discardOpenLobbies(user.id);
 
     const gameId = uuid();
     const playerId = uuid();
@@ -499,6 +524,7 @@ export function joinGame(
       playerId,
     });
 
+    discardOpenLobbies(user.id, game.id);
     emitGameEvent({ type: "updated", gameId: game.id });
 
     return { gameId: game.id };
@@ -534,6 +560,7 @@ export function joinGame(
       });
     })();
 
+    await discardOpenLobbies(user.id, result.gameId);
     emitGameEvent({ type: "updated", gameId: result.gameId });
 
     return result;
@@ -940,9 +967,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
-      opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
         opponent: view.opponent ? resolvePresence(view.opponent._id) : null,
@@ -1089,9 +1114,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
-      opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
         opponent: view.opponent ? resolvePresence(view.opponent._id) : null,
@@ -1351,16 +1374,22 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
     const text = normalizeWord(textInput);
     assertValidDictionaryWord(text, normalizedType === "fourLetter" ? 4 : 5);
 
-    const guessNumber =
-      ((((await db.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id)) as { count: number }).count ?? 0) + 1);
-
     const isCorrect = normalizedType === "fullWord" && text === opponent.secret_word;
     const matchCount = normalizedType === "fullWord" ? (isCorrect ? 5 : 0) : calculateMatchCount(text, opponent.secret_word);
 
     const guessId = uuid();
     const submittedAt = now();
 
-    await db.transaction(async (tx) => {
+    const guessNumber = await db.transaction(async (tx) => {
+      // Numbering the guess outside this lock lets two simultaneous submissions
+      // read the same count and both claim it.
+      await tx.prepare(`SELECT id FROM players WHERE id = ? FOR UPDATE`).get(player.id);
+
+      const guessNumber =
+        ((((await tx.prepare(`SELECT COUNT(*) AS count FROM guesses WHERE player_id = ?`).get(player.id)) as {
+          count: number;
+        }).count ?? 0) + 1);
+
       await tx
         .prepare(
           `INSERT INTO guesses (id, game_id, player_id, type, text, match_count, is_correct, guess_number, created_at)
@@ -1381,6 +1410,8 @@ export function submitGuess(user: AuthUser, gameId: string, type: GuessType, tex
       } else {
         await tx.prepare(`UPDATE games SET last_activity_at = ? WHERE id = ?`).run(submittedAt, gameId);
       }
+
+      return guessNumber;
     })();
 
     emitGameEvent({ type: "updated", gameId });
@@ -1426,15 +1457,36 @@ export function updateAlphabet(user: AuthUser, gameId: string, letterInput: stri
       throw new Error("Game is not active.");
     }
 
-    const { player } = (await getPlayerInGameFrom(db, gameId, user.id)) as { player: GameStatePlayerRow };
+    const nextState = assertValidAlphabetState(state);
+
+    // The whole alphabet is one JSON column, so two letters marked at once would
+    // each write a blob built from the pre-click read and drop the other's letter.
+    const { playerId, alphabet } = await db.transaction(async (tx) => {
+      const locked = (await tx
+        .prepare(
+          `SELECT id, alphabet_json
+           FROM players
+           WHERE game_id = ? AND user_id = ?
+           FOR UPDATE`
+        )
+        .get(gameId, user.id)) as { id: string; alphabet_json: string } | undefined;
+
+      if (!locked) {
+        throw new Error("You are not a participant in this game.");
+      }
+
+      const next = parseAlphabet(locked.alphabet_json);
+      next[letter] = nextState;
+      await tx.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(next), locked.id);
+
+      return { playerId: locked.id, alphabet: next };
+    })();
+
     await touchPlayerPresence({
-      playerId: player.id,
+      playerId,
       gameId,
       userId: user.id,
     });
-    const alphabet = parseAlphabet(player.alphabet_json);
-    alphabet[letter] = assertValidAlphabetState(state);
-    await db.prepare(`UPDATE players SET alphabet_json = ? WHERE id = ?`).run(JSON.stringify(alphabet), player.id);
     emitGameEvent({ type: "updated", gameId });
     return alphabet;
   })();

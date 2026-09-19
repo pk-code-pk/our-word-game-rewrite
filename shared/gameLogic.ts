@@ -120,38 +120,6 @@ export function countDiscoveredSecretLetters(
   return foundCount;
 }
 
-export function computeOpponentGreenLetterInsight(
-  secretWord: string | undefined,
-  opponentAlphabet: Record<string, AlphabetState> | undefined
-): {
-  correctGreenCount: number;
-  revealedGreenLetters: Array<{ letter: string; isCorrect: boolean }> | null;
-} | null {
-  if (!secretWord || !opponentAlphabet) {
-    return null;
-  }
-
-  const secretUpper = normalizeWord(secretWord);
-  const secretLetterSet = new Set(secretUpper.split(""));
-  const presentLetters: string[] = [];
-
-  for (const [letter, state] of Object.entries(opponentAlphabet)) {
-    if (state === "present") {
-      presentLetters.push(letter.toUpperCase());
-    }
-  }
-
-  presentLetters.sort();
-
-  const correctGreenCount = presentLetters.filter((l) => secretLetterSet.has(l)).length;
-  const revealedGreenLetters =
-    presentLetters.length > 0
-      ? presentLetters.map((l) => ({ letter: l, isCorrect: secretLetterSet.has(l) }))
-      : null;
-
-  return { correctGreenCount, revealedGreenLetters };
-}
-
 export function normalizeWord(value: string): string {
   return value.trim().toUpperCase();
 }
@@ -314,9 +282,7 @@ export function buildGameStateView<
           secretWord: shouldRevealWords ? opponent.secretWord : undefined,
         }
       : null,
-    myFoundLetterCount: opponent ? countDiscoveredSecretLetters(opponent.secretWord, me.alphabet) : null,
     opponentFoundLetterCount: opponent ? countDiscoveredSecretLetters(me.secretWord, opponent.alphabet) : null,
-    opponentGreenLetterInsight: opponent ? computeOpponentGreenLetterInsight(me.secretWord, opponent.alphabet) : null,
     myGuesses,
     opponentGuesses,
   };
