@@ -11,6 +11,12 @@ interface GameLobbyProps {
   onGameStart: (gameId: string) => void;
   onPlayWithFriend: () => void;
   onAcceptInvite: () => void;
+  /** Set when the player arrived on a /?join=CODE link. */
+  inviteCode?: string | null;
+  onJoinByInviteCode?: () => Promise<void>;
+  onDismissInvite?: () => void;
+  /** Opens a match and hands its link to the device share sheet. */
+  onShareInvite?: () => Promise<void>;
 }
 
 type WordStatus = "idle" | "checking" | "valid" | "invalid";
@@ -33,8 +39,14 @@ export function GameLobby({
   onGameStart,
   onPlayWithFriend,
   onAcceptInvite,
+  inviteCode,
+  onJoinByInviteCode,
+  onDismissInvite,
+  onShareInvite,
 }: GameLobbyProps) {
   const [isFinding, setIsFinding] = useState(false);
+  const [isJoiningInvite, setIsJoiningInvite] = useState(false);
+  const [isSharingInvite, setIsSharingInvite] = useState(false);
   const [startingBot, setStartingBot] = useState<BotDifficulty | null>(null);
   const [wordStatus, setWordStatus] = useState<WordStatus>(() =>
     secretWord.length === 5 ? "valid" : "idle"
@@ -83,6 +95,36 @@ export function GameLobby({
     return validateWord(secretWord.trim());
   };
 
+  const handleJoinInvite = async () => {
+    if (!onJoinByInviteCode) return;
+    if (!hasUsername) { toast.error("Enter a display name"); return; }
+    if (!(await ensureValidWord())) return;
+
+    setIsJoiningInvite(true);
+    try {
+      await onJoinByInviteCode();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't join that match");
+    } finally {
+      setIsJoiningInvite(false);
+    }
+  };
+
+  const handleTextInvite = async () => {
+    if (!onShareInvite) return;
+    if (!hasUsername) { toast.error("Enter a display name"); return; }
+    if (!(await ensureValidWord())) return;
+
+    setIsSharingInvite(true);
+    try {
+      await onShareInvite();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Couldn't create an invite");
+    } finally {
+      setIsSharingInvite(false);
+    }
+  };
+
   const handleFindGame = async () => {
     if (!hasUsername) { toast.error("Enter a display name"); return; }
     if (!(await ensureValidWord())) return;
@@ -117,7 +159,7 @@ export function GameLobby({
   // A game-start request is in flight. Any action that would navigate into a
   // different game has to wait, or the two `onGameStart` calls race and one of
   // the created games is orphaned.
-  const isStartingGame = isFinding || startingBot !== null;
+  const isStartingGame = isFinding || startingBot !== null || isJoiningInvite || isSharingInvite;
   // Deliberately NOT gated on wordStatus === "checking". Clicking a start
   // button blurs the secret input, which kicks off blur validation, which set
   // wordStatus to "checking" and disabled the button in the same tick — so the
@@ -131,6 +173,28 @@ export function GameLobby({
     <section className="mx-auto max-w-2xl">
       <div className="rounded-xl border border-zinc-200 bg-white shadow-sm">
         <div className="space-y-5 px-6 py-6">
+          {inviteCode && (
+            <div className="flex items-start justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3">
+              <div className="text-sm text-blue-900">
+                <p className="font-semibold">You&apos;ve been invited to a match!</p>
+                <p className="mt-0.5 text-blue-700">
+                  Pick your secret word and display name, then join room{" "}
+                  <span className="font-mono font-bold tracking-widest">{inviteCode}</span>.
+                </p>
+              </div>
+              {onDismissInvite && (
+                <button
+                  type="button"
+                  onClick={onDismissInvite}
+                  disabled={isBusy}
+                  className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-100 disabled:opacity-40"
+                  aria-label="Dismiss invite"
+                >
+                  Dismiss
+                </button>
+              )}
+            </div>
+          )}
           <div className="flex justify-end">
             <HowToPlay />
           </div>
@@ -181,6 +245,32 @@ export function GameLobby({
               className="w-full rounded-lg border border-zinc-200 bg-white px-4 py-2.5 text-[16px] text-zinc-900 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
           </div>
+
+          {/* Invite link actions */}
+          {inviteCode && onJoinByInviteCode && (
+            <button
+              type="button"
+              onClick={handleJoinInvite}
+              disabled={!hasUsername || isBusy}
+              className="w-full rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {isJoiningInvite ? "Joining..." : `Join match ${inviteCode}`}
+            </button>
+          )}
+
+          {!inviteCode && onShareInvite && (
+            <button
+              type="button"
+              onClick={handleTextInvite}
+              disabled={!hasUsername || isBusy}
+              className="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 py-3 font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+              {isSharingInvite ? "Opening..." : "Text a friend an invite"}
+            </button>
+          )}
 
           {/* Action buttons */}
           <div className="flex flex-col gap-2 sm:grid sm:grid-cols-3 sm:gap-3">

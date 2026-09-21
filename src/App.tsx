@@ -24,6 +24,12 @@ import {
   type PlayState,
 } from "./lib/playState";
 import { usePollingQuery } from "./lib/usePollingQuery";
+import {
+  buildInviteUrl,
+  clearInviteCodeFromUrl,
+  readInviteCodeFromUrl,
+  shareInvite,
+} from "./lib/invite";
 
 function isRecoverableInviteLobbyError(message: string) {
   return /waiting game not found|game not found|no longer available|already started|game is full/i.test(message);
@@ -126,6 +132,7 @@ function Content() {
   const [openFriendsPanel, setOpenFriendsPanel] = useState(false);
   const [openInbox, setOpenInbox] = useState(false);
   const [openGuestInvites, setOpenGuestInvites] = useState(false);
+  const [pendingJoinCode, setPendingJoinCode] = useState<string>(() => readInviteCodeFromUrl());
 
   useEffect(() => {
     if (typeof window === "undefined" || !user?.id) {
@@ -138,6 +145,41 @@ function Content() {
 
   const recentGames = recentGamesQuery.data?.games ?? [];
   const reusableWaitingGame = recentGames.find((game) => game.status === "waiting" && !game.isExpired) ?? null;
+
+  async function handleJoinByInviteCode(): Promise<void> {
+    const result = await api.joinGame({
+      code: pendingJoinCode,
+      username: username.trim(),
+      secretWord,
+    });
+    clearInviteCodeFromUrl();
+    setPendingJoinCode("");
+    setPlayState((prev) => ({ ...prev, currentGameId: result.gameId, gamePhase: "playing", lobbyCode: "" }));
+  }
+
+  function dismissInvite(): void {
+    clearInviteCodeFromUrl();
+    setPendingJoinCode("");
+  }
+
+  async function handleCreateAndShareInvite(): Promise<void> {
+    const trimmedUsername = username.trim();
+    const game = reusableWaitingGame
+      ? { gameId: reusableWaitingGame.gameId, code: reusableWaitingGame.code }
+      : await api.createGame({ username: trimmedUsername, secretWord, public: false });
+
+    // Enter the match before sharing. The share sheet only settles when the user
+    // picks or cancels, so waiting on it strands the host outside a game that
+    // already exists. The waiting screen carries its own share button.
+    setPlayState((prev) => ({ ...prev, currentGameId: game.gameId, gamePhase: "playing", lobbyCode: "" }));
+
+    const outcome = await shareInvite({ code: game.code, hostName: trimmedUsername });
+    if (outcome === "copied") {
+      toast.success("Invite link copied. Paste it to a friend!");
+    } else if (outcome === "unsupported") {
+      toast(`Share this link to invite a friend: ${buildInviteUrl(game.code)}`, { duration: 8000 });
+    }
+  }
 
   async function handleQuickInvite(friend: FriendView) {
     const trimmedUsername = username.trim();
@@ -422,6 +464,10 @@ function Content() {
                         setOpenFriendsPanel(true);
                       }
                     }}
+                    inviteCode={pendingJoinCode || null}
+                    onJoinByInviteCode={handleJoinByInviteCode}
+                    onDismissInvite={dismissInvite}
+                    onShareInvite={handleCreateAndShareInvite}
                     onAcceptInvite={() => {
                       if (user?.isAnonymous) {
                         setOpenGuestInvites(true);

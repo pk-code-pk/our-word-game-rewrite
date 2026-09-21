@@ -8,6 +8,7 @@ import { useAuth } from "../lib/auth";
 import { useGameSocket } from "../lib/useGameSocket";
 import { useOptimisticAlphabet } from "../lib/useOptimisticAlphabet";
 import { GUESS_SUBMIT_LOCK_MS } from "../../shared/gameLogic";
+import { buildInviteUrl, shareInvite } from "../lib/invite";
 
 // Lazy-loaded so the ~130 KB word list doesn't enter the initial bundle.
 // First guess submission pays the import cost; subsequent ones hit the cache.
@@ -539,6 +540,18 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
     }
   };
 
+  const handleShareInvite = async () => {
+    const code = gameState?.game.code;
+    if (!code) return;
+
+    const outcome = await shareInvite({ code, hostName: currentPlayer?.username });
+    if (outcome === "copied") {
+      toast.success("Invite link copied. Paste it to a friend!");
+    } else if (outcome === "unsupported") {
+      toast(`Share this link to invite a friend: ${buildInviteUrl(code)}`, { duration: 8000 });
+    }
+  };
+
   const handleExit = async () => {
     if (!isWaitingForOpponent) {
       onExitToMenu();
@@ -630,6 +643,16 @@ export function GameBoard({ gameId, onExitToMenu }: GameBoardProps) {
               We'll pair you with the next player online. Share this code to invite someone directly:
             </div>
             <div className="mt-2 font-mono text-sm font-semibold tracking-widest text-zinc-500">{gameState.game.code}</div>
+            <button
+              type="button"
+              onClick={() => void handleShareInvite()}
+              className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-5 font-semibold text-white transition hover:bg-blue-700 sm:w-auto"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" aria-hidden="true">
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+              Text invite link
+            </button>
             <button
               onClick={() => void handleExit()}
               disabled={isLeavingWaitingLobby}
