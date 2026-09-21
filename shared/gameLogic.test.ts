@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   buildGameStateView,
   calculateMatchCount,
-  computeOpponentGreenLetterInsight,
   countDiscoveredSecretLetters,
   createEmptyAlphabet,
   getNextAlphabetState,
@@ -56,42 +55,6 @@ describe("game helpers", () => {
     opponentAlphabet.A = "absent";
 
     expect(countDiscoveredSecretLetters("CRANE", opponentAlphabet)).toBe(2);
-  });
-
-  it("computes green letter insight with 4 present marks", () => {
-    const alpha = createEmptyAlphabet();
-    alpha.C = "present";
-    alpha.R = "present";
-    alpha.A = "present";
-    alpha.Z = "present";
-
-    const result = computeOpponentGreenLetterInsight("CRANE", alpha);
-    expect(result?.correctGreenCount).toBe(3);
-    expect(result?.revealedGreenLetters).toEqual([
-      { letter: "A", isCorrect: true },
-      { letter: "C", isCorrect: true },
-      { letter: "R", isCorrect: true },
-      { letter: "Z", isCorrect: false },
-    ]);
-  });
-
-  it("computes green letter insight with 5 present marks", () => {
-    const alpha = createEmptyAlphabet();
-    alpha.C = "present";
-    alpha.R = "present";
-    alpha.A = "present";
-    alpha.Z = "present";
-    alpha.X = "present";
-
-    const result = computeOpponentGreenLetterInsight("CRANE", alpha);
-    expect(result?.correctGreenCount).toBe(3);
-    expect(result?.revealedGreenLetters).toEqual([
-      { letter: "A", isCorrect: true },
-      { letter: "C", isCorrect: true },
-      { letter: "R", isCorrect: true },
-      { letter: "X", isCorrect: false },
-      { letter: "Z", isCorrect: false },
-    ]);
   });
 
   it("redacts secret words until the game is complete", () => {
@@ -150,13 +113,6 @@ describe("game helpers", () => {
     expect(activeView?.opponentFoundLetterCount).toBe(2);
     expect(activeView?.myGuesses).toHaveLength(1);
     expect(activeView?.opponentGuesses).toHaveLength(0);
-    expect(activeView?.opponentGreenLetterInsight).toEqual({
-      correctGreenCount: 2,
-      revealedGreenLetters: [
-        { letter: "C", isCorrect: true },
-        { letter: "R", isCorrect: true },
-      ],
-    });
 
     const completeView = buildGameStateView({
       game: { ...baseGame, status: "completed", winnerId: "player_me" },

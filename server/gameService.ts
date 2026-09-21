@@ -1175,9 +1175,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
-      opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
         // A bot never disconnects, so it is not subject to the presence TTL —
@@ -1328,9 +1326,7 @@ export function getGameState(user: AuthUser, gameId: string): any {
         guessNumber: guess.guessNumber,
         createdAt: (guess as { createdAt?: number }).createdAt ?? 0,
       })),
-      myFoundLetterCount: view.myFoundLetterCount,
       opponentFoundLetterCount: view.opponentFoundLetterCount,
-      opponentGreenLetterInsight: view.opponentGreenLetterInsight ?? null,
       presence: {
         me: resolvePresence(view.me._id),
         // A bot never disconnects, so it is not subject to the presence TTL —

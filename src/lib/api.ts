@@ -84,10 +84,8 @@ type LegacyGameStateResponse = {
           me?: PresenceState;
           opponent?: PresenceState | null;
         };
-        myFoundLetterCount?: number | null;
         opponentFoundLetterCount?: number | null;
         opponentPresentLetterCount?: number | null;
-        opponentGreenLetterInsight?: GameStateView["opponentGreenLetterInsight"];
         opponentGuesses?: Array<{
           id: string;
           playerId: string;
@@ -223,17 +221,12 @@ export function normalizeGameStateResponse(payload: LegacyGameStateResponse): Ga
       opponent,
       myGuesses: gameState.myGuesses ?? [],
       opponentGuesses: gameState.opponentGuesses ?? [],
-      myFoundLetterCount:
-        opponent && typeof gameState.myFoundLetterCount === "number"
-          ? gameState.myFoundLetterCount
-          : null,
       opponentFoundLetterCount:
         opponent && typeof gameState.opponentFoundLetterCount === "number"
           ? gameState.opponentFoundLetterCount
           : opponent && typeof gameState.opponentPresentLetterCount === "number"
           ? gameState.opponentPresentLetterCount
           : null,
-      opponentGreenLetterInsight: gameState.opponentGreenLetterInsight ?? null,
       presence: {
         me: gameState.presence?.me ?? "offline",
         opponent: opponent ? (gameState.presence?.opponent ?? "offline") : null,

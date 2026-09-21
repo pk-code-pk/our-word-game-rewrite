@@ -72,12 +72,7 @@ export interface GameStateView {
   };
   myGuesses: GuessView[];
   opponentGuesses: GuessView[];
-  myFoundLetterCount: number | null;
   opponentFoundLetterCount: number | null;
-  opponentGreenLetterInsight: null | {
-    correctGreenCount: number;
-    revealedGreenLetters: Array<{ letter: string; isCorrect: boolean }> | null;
-  };
   presence: {
     me: PresenceState;
     opponent: PresenceState | null;
